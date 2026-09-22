@@ -1,0 +1,4 @@
+samples/
+*.eml
+.venv/
+__pycache__/
