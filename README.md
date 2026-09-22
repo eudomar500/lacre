@@ -23,7 +23,11 @@ gas, an attestation costing about 0.9 M gas and reaching consensus in 13 to 27
 seconds with 5 of 5 validators agreeing, and a live 1024 bit RSA signature
 from a large sender verified on chain. It also records what does not work:
 validators refuse a plain HTTP URL to a raw IP before the request leaves the
-node. See [experiments/dkim-probe/README.md](experiments/dkim-probe/README.md)
+node. A second probe, `experiments/dkim-body-probe/`, binds the body served at
+a URL to the body hash the same signature already committed to and extracts
+fields from it with no RSA on chain: a 116 KB body was hashed, matched and
+parsed on chain for about 0.9 M gas with 5 of 5 validators agreeing. See
+[experiments/dkim-probe/README.md](experiments/dkim-probe/README.md)
 and
 [experiments/dkim-onchain-probe/README.md](experiments/dkim-onchain-probe/README.md).
 
