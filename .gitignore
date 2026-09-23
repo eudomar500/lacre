@@ -2,3 +2,4 @@ samples/
 *.eml
 .venv/
 __pycache__/
+artifacts/

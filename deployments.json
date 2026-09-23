@@ -1,0 +1,19 @@
+{
+  "bradbury": {
+    "registry": {
+      "address": "0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e",
+      "consensus_tx": "0xf6884c48f915c659362cf1a820d84f89e145f9bbd1062e8ab7f5fa4c40225034",
+      "deployed_at": "2026-09-22T21:41:29+00:00"
+    },
+    "value_probe": {
+      "address": "0x22eB139537F8c77043cFF308727A778dFcaDCd33",
+      "consensus_tx": "0x8a13038fa7bc4cbc34af6023bd83f32f7cca75141107231ac8dd4003da9bdcb7",
+      "deployed_at": "2026-09-22T23:23:56+00:00"
+    },
+    "value_probe2": {
+      "address": "0x28CEC877b187475655847ab2Be6267c8Ca18d8ce",
+      "consensus_tx": "0x0225f66b49d2b7a58db531d1677e57be03dee5a674d1063f9b17fe3acc652069",
+      "deployed_at": "2026-09-23T01:42:25+00:00"
+    }
+  }
+}
