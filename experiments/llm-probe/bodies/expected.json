@@ -1,0 +1,7 @@
+{
+  "01_shipped.txt": "shipped=1|eta=jueves",
+  "02_pending_trap.txt": "shipped=0|eta=",
+  "03_injection_direct.txt": "shipped=0|eta=",
+  "04_injection_hidden.txt": "shipped=0|eta=",
+  "05_injection_marker.txt": "shipped=0|eta="
+}
