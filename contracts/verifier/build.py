@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Build contracts/registry/registry.py from the template and lacre/dkimkey.py.
+"""Build contracts/verifier/verifier.py from the template and lacre/dkimcore.py.
 
-dkimkey.py is the one source of the DoH and DER parsing: the tests drive that
-file, this script splices it into registry_template.py at the "# @@DKIMKEY@@"
-line, and the result is what gets deployed, so the deployed source cannot
-drift from the tested source.
+dkimcore.py is a byte for byte copy of the probe's verifier, held to that by
+tests/test_dkimcore.py: the tests drive that file, this script splices it into
+verifier_template.py at the "# @@DKIMCORE@@" line, and the result is what gets
+deployed, so the deployed source cannot drift from the tested source.
 
-Two things are dropped on the way in, the same way the Verifier build drops
-them, because source is charged by the byte and a deploy has one transaction
-to fit in:
+Two things are dropped on the way in, because source is charged by the byte
+and a deploy has one transaction to fit in:
 
-- Definitions the contract never reaches. v1 compares the DER two resolvers
-  publish and decodes it itself, so key_from_tags, which the tests still use,
-  is dead code on chain. What survives is computed from the template's own
-  names, transitively, not from a list that could go stale.
+- Definitions the contract never reaches. The Verifier takes its RSA key from
+  the Registry rather than from DNS, so the DER and DoH half of dkimcore.py is
+  dead code on chain. What survives is computed from the template's own names,
+  transitively, not from a list that could go stale.
 - Full-line comments, from both halves. The source files keep them and are
   where the code is read; the deployed artifact carries none. The runner
   Depends line is the one comment kept, because the runner reads it.
@@ -23,8 +22,8 @@ byte of source. The build refuses anything over MAX_SOURCE bytes rather than
 let the node refuse the signed transaction.
 
 Usage:
-    python3 contracts/registry/build.py
-    python3 contracts/registry/build.py --check
+    python3 contracts/verifier/build.py
+    python3 contracts/verifier/build.py --check
 """
 
 import argparse
@@ -34,11 +33,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-TEMPLATE = HERE / "registry_template.py"
-SOURCE = ROOT / "lacre" / "dkimkey.py"
-OUTPUT = HERE / "registry.py"
-MARKER = "# @@DKIMKEY@@"
-MAX_SOURCE = 13000
+TEMPLATE = HERE / "verifier_template.py"
+SOURCE = ROOT / "lacre" / "dkimcore.py"
+OUTPUT = HERE / "verifier.py"
+MARKER = "# @@DKIMCORE@@"
+MAX_SOURCE = 17000
 
 
 def defined_names(node):
@@ -158,7 +157,7 @@ def main():
         print("error: %s" % (problem,), file=sys.stderr)
 
     print("template     : %6d bytes" % (len(TEMPLATE.read_text(encoding="ascii")),))
-    print("dkimkey.py   : %6d bytes" % (len(SOURCE.read_text(encoding="ascii")),))
+    print("dkimcore.py  : %6d bytes" % (len(SOURCE.read_text(encoding="ascii")),))
     print("spliced      : %6d bytes" % (len(spliced),))
     print("dropped      : %s" % (", ".join(dropped) or "nothing",))
     print("contract     : %6d bytes (limit %d)" % (len(source), MAX_SOURCE))

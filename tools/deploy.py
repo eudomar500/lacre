@@ -10,9 +10,14 @@ under the network and the file's stem. Other entries are read back and written
 out untouched; re-deploying the same contract on the same network replaces its
 own entry, which is the point of the file.
 
+Anything after the path is a constructor argument, read the way call.py reads
+a method's: a string unless it is an integer or a boolean, with "str:" to
+force a string.
+
 Usage:
     export PROBE_PK=0x<64 hex chars>
     python3 tools/deploy.py contracts/registry/registry.py
+    python3 tools/deploy.py contracts/verifier/verifier.py 0x<registry address>
     python3 tools/deploy.py contracts/registry/registry.py --network studionext
     python3 tools/deploy.py contracts/registry/registry.py --estimate-only
 
@@ -57,11 +62,12 @@ def main():
     network, arguments = chain.take_network(sys.argv[1:])
     estimate_only = "--estimate-only" in arguments
     arguments = [arg for arg in arguments if arg != "--estimate-only"]
-    if len(arguments) != 1:
+    if not arguments:
         print(__doc__)
         sys.exit(1)
 
     path = Path(arguments[0])
+    args = [chain.parse_arg(argument) for argument in arguments[1:]]
     if not path.is_file():
         chain.die("%s does not exist; build it first" % (path,))
     source = path.read_bytes()
@@ -74,8 +80,10 @@ def main():
     print("source size  : %d bytes" % (len(source),))
     print("deployer     : %s" % (account.address,))
     print("rpc          : %s" % (net["rpc_url"],))
+    if args:
+        print("constructor  : %r" % (tuple(args),))
 
-    encoded = chain.deploy_calldata(client, account, source)
+    encoded = chain.deploy_calldata(client, account, source, args)
     gas = chain.estimate(net, client, account, encoded, final=estimate_only)
     if estimate_only:
         return

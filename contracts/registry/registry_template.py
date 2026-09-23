@@ -11,7 +11,13 @@ import hashlib
 
 # @@DKIMKEY@@
 
-DOH_URL = "https://dns.google/resolve?name=%s._domainkey.%s&type=TXT"
+# Both have to publish the same key before it is stored, so one resolver
+# that is wrong, stale or captured cannot write a key on its own.
+RESOLVERS = (
+    "https://dns.google/resolve?name=%s&type=TXT",
+    "https://cloudflare-dns.com/dns-query?name=%s&type=TXT",
+)
+ABSENT = "key revoked or absent"
 
 # A DNS name is 253 characters, one label is 63. Longer is a caller mistake.
 MAX_DOMAIN = 253
@@ -47,42 +53,72 @@ def failure(reason):
     return "||||" + str(reason).replace("|", " ")[:MAX_REASON]
 
 
+def published(url):
+    """The DER under p=, b"" if there is no key, None if there is no answer."""
+    try:
+        response = gl.nondet.web.get(url, headers={"accept": "application/dns-json"})
+        body = (response.body or b"").decode("utf-8", "replace")
+    except Exception:
+        return None
+    # Only NOERROR and NXDOMAIN say anything about the record. A SERVFAIL
+    # read as "gone" would let a flaky upstream retire a key on refresh.
+    rcode = re.search(r'"Status"\s*:\s*(\d+)', body)
+    if getattr(response, "status", 0) != 200 or not rcode or rcode.group(1) not in ("0", "3"):
+        return None
+    try:
+        tags = key_tags(txt_from_doh(body))
+    except ValueError:
+        return b""
+    return key_der(tags) if tags.get("p") else b""
+
+
 def fetch_key(domain, selector):
     """The canonical string the validators have to agree on. Never raises.
 
-    A refused fetch or a revoked key is a reason rather than an exception, so
-    the two sides compare answers instead of disagreeing about the network.
+    A resolver failure or a revoked key is a reason rather than an exception,
+    so the two sides compare answers instead of disagreeing about the network.
     """
+    found, down = [], []
+    for url in RESOLVERS:
+        try:
+            der = published(url % record_key(domain, selector))
+        except Exception as error:
+            return failure("key unusable: " + type(error).__name__)
+        if der is None:
+            down.append(url.split("/")[2])
+        found.append(der)
+    if down:
+        return failure("resolver unavailable: " + ", ".join(down))
+    # The DER, not the TXT string: resolvers chunk and quote a long record
+    # differently while publishing the same key.
+    der = found[0]
+    if der != found[1]:
+        return failure("resolvers disagree")
+    if not der:
+        return failure(ABSENT)
     try:
-        response = gl.nondet.web.get(
-            DOH_URL % (selector, domain), headers={"accept": "application/dns-json"}
-        )
-    except Exception as error:
-        return failure("DoH fetch failed: " + type(error).__name__)
-
-    # Response.status is the field the pinned runner returns; getattr keeps a
-    # renamed one from raising inside the block that must not raise.
-    status = int(getattr(response, "status", 0) or 0)
-    if status != 200:
-        return failure("DoH HTTP %d" % (status,))
-
-    try:
-        tags = key_tags(txt_from_doh((response.body or b"").decode("utf-8", "replace")))
-    except Exception as error:
-        return failure("no key record: " + type(error).__name__)
-    if not tags.get("p", ""):
-        return failure("key revoked or absent")
-
-    try:
-        key = key_from_tags(tags)
+        n, e = decode_spki(der)
     except Exception as error:
         return failure("key unusable: " + type(error).__name__)
-    return "%x|%d|%d|%s|" % (
-        key["n"],
-        key["e"],
-        key["key_bits"],
-        hashlib.sha256(key["der"]).hexdigest(),
-    )
+    return "%x|%d|%d|%s|" % (n, e, n.bit_length(), hashlib.sha256(der).hexdigest())
+
+
+def agree(domain, selector):
+    def probe() -> str:
+        return fetch_key(domain, selector)
+
+    # strict_eq compares the two returns for exact equality, so consensus
+    # rides on the canonical string, not on the bytes the resolvers sent.
+    parts = str(gl.eq_principle.strict_eq(probe)).split("|")
+    if len(parts) != 5:
+        raise gl.vm.UserError("[EXPECTED] malformed key string")
+    return parts
+
+
+def now():
+    # The runner's own transaction datetime, stored unmodified: what every
+    # validator sees here has to be the same string.
+    return str(gl.message_raw["datetime"])
 
 
 def as_address(value):
@@ -110,6 +146,15 @@ class KeyRecord:
     key_sha256: str
     first_seen: str
     retired: bool
+    rotated: bool
+
+
+@allow_storage
+@dataclass
+class VersionEntry:
+    name: str
+    address: Address
+    set_at: str
 
 
 class Contract(gl.Contract):
@@ -117,6 +162,7 @@ class Contract(gl.Contract):
     pending_owner_address: Address
     versions: TreeMap[str, Address]
     keys: TreeMap[str, KeyRecord]
+    history: DynArray[VersionEntry]
 
     def __init__(self):
         self.owner_address = gl.message.sender_address
@@ -130,7 +176,19 @@ class Contract(gl.Contract):
             raise gl.vm.UserError("[EXPECTED] version name is empty or not a name")
         pointer = as_address(address)
         self.versions[label] = pointer
+        # Kept so that an attestation id from an older Verifier still leads
+        # to the contract that holds it.
+        self.history.append(VersionEntry(label, pointer, now()))
         return pointer.as_hex
+
+    @gl.public.view
+    def versions_of(self, name: str) -> list:
+        label = normalize(name, MAX_LABEL)
+        return [
+            {"name": v.name, "address": v.address.as_hex, "set_at": v.set_at}
+            for v in self.history
+            if v.name == label
+        ]
 
     @gl.public.view
     def version(self, name: str) -> str:
@@ -186,15 +244,7 @@ class Contract(gl.Contract):
             # key arrives under a new selector.
             return "retired" if held.retired else "exists"
 
-        def probe() -> str:
-            return fetch_key(name, label)
-
-        # strict_eq compares the two returns for exact equality, so consensus
-        # rides on the canonical string, not on the bytes the resolver sent.
-        agreed = str(gl.eq_principle.strict_eq(probe))
-        parts = agreed.split("|")
-        if len(parts) != 5:
-            raise gl.vm.UserError("[EXPECTED] malformed key string")
+        parts = agree(name, label)
         if parts[4]:
             # A key that cannot be read is an answer, not a failed write.
             return parts[4]
@@ -206,12 +256,32 @@ class Contract(gl.Contract):
             e=u256(int(parts[1]) if parts[1].isdigit() else 0),
             key_bits=u256(int(parts[2]) if parts[2].isdigit() else 0),
             key_sha256=parts[3],
-            # The runner's own transaction datetime, stored unmodified: what
-            # every validator sees here has to be the same string.
-            first_seen=str(gl.message_raw["datetime"]),
+            first_seen=now(),
             retired=False,
+            rotated=False,
         )
         return "registered"
+
+    @gl.public.write
+    def refresh_key(self, domain: str, selector: str) -> str:
+        held = self.keys.get(lookup_key(domain, selector))
+        if held is None:
+            return "not registered"
+        if held.retired:
+            return "retired"
+        parts = agree(held.domain, held.selector)
+        if parts[4] == ABSENT:
+            # An empty p= is the publisher revoking the key, RFC 6376 3.6.1.
+            held.retired = True
+            return "retired by refresh"
+        if parts[4]:
+            return parts[4]
+        if parts[3] == held.key_sha256:
+            return "unchanged"
+        # The record keeps the key attestations were checked against; the
+        # flag tells consumers DNS now publishes another one under this name.
+        held.rotated = True
+        return "rotated under same selector"
 
     @gl.public.write
     def retire_key(self, domain: str, selector: str) -> bool:
@@ -238,6 +308,7 @@ class Contract(gl.Contract):
             "key_sha256": str(held.key_sha256),
             "first_seen": str(held.first_seen),
             "retired": bool(held.retired),
+            "rotated": bool(held.rotated),
         }
 
     @gl.public.view

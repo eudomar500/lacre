@@ -198,11 +198,15 @@ def parse_arg(text):
     return text
 
 
-def deploy_calldata(client, account, code):
-    """Exactly what genlayer_py.contracts.actions.deploy_contract builds."""
+def deploy_calldata(client, account, code, args=None):
+    """Exactly what genlayer_py.contracts.actions.deploy_contract builds.
+
+    args are the constructor's, encoded the same way a write's are: a
+    contract whose __init__ takes an address is deployed with it here.
+    """
     data = [
         code,
-        calldata.encode(make_calldata_object(method=None, args=[], kwargs=None)),
+        calldata.encode(make_calldata_object(method=None, args=args or [], kwargs=None)),
         False,  # leader_only
     ]
     return _encode_add_transaction_data(

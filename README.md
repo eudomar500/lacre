@@ -31,11 +31,19 @@ the payout uses the external message path and settles on finalization, because
 the internal message path moves zero wei to a wallet and reports no error. The
 first production contract is the Registry in `contracts/registry/`, which
 holds the DKIM keys and the version pointers everything else resolves through.
-It is live on Bradbury at `0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e`, with
-the amazon.com key registered and readable. See
-[docs/registry.md](docs/registry.md),
+Registry v1 is live on Bradbury at
+`0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc`, with the amazon.com key
+registered and readable; v0, at
+`0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e`, is retired and nothing points
+at it. Reading through it is the Verifier in `contracts/verifier/`, which
+turns a DKIM signature into the record described above. Verifier v1.1 is live
+at `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` and is what the Registry
+points at. v1, at `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a`, is retired
+because it reverted on an underpaid call, and a reverting call on this chain
+keeps the value it carried; v1.1 answers and refunds instead. See
+[docs/registry.md](docs/registry.md), [docs/verifier.md](docs/verifier.md),
 [experiments/dkim-onchain-probe/README.md](experiments/dkim-onchain-probe/README.md)
 and
 [experiments/value-probe-2/README.md](experiments/value-probe-2/README.md).
 
-Status: research probes plus a first production contract on a testnet.
+Status: research probes plus the Registry and the Verifier on a testnet.
