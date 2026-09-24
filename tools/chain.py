@@ -323,14 +323,39 @@ def send(net, client, account, encoded, estimated_gas, value=0):
     if receipt["status"] != 1:
         die("the L2 transaction reverted; nothing reached consensus")
 
-    contract = client.w3.eth.contract(abi=client.chain.consensus_main_contract["abi"])
-    events = contract.get_event_by_name("NewTransaction").process_receipt(receipt, DISCARD)
-    if not events:
-        die("L2 succeeded but no NewTransaction event was emitted")
-    consensus_id = client.w3.to_hex(events[0]["args"]["txId"])
+    found = created_transaction(client.w3, client.chain.consensus_main_contract["abi"],
+                                receipt)
+    if found is None:
+        die("L2 succeeded but emitted neither %s" % (" nor ".join(CREATION_EVENTS),))
+    consensus_id, event = found
     print("CONSENSUS TX : %s" % (consensus_id,))
+    print("created by   : %s%s" % (
+        event, " (queued behind an earlier transaction to the same contract)"
+        if event == "CreatedTransaction" else ""))
     print("explorer     : %s/tx/%s" % (net["explorer"], consensus_id))
     return consensus_id, used
+
+
+# The two events ConsensusMain emits for the transaction an addTransaction
+# creates. NewTransaction when it is activated at once; CreatedTransaction,
+# with no activator, when the recipient already has an undecided transaction
+# and the new one is queued behind it. Measured on Bradbury on 24 September
+# 2026. genlayer-py 0.16.3 looks only for the first and gives up on a queued
+# transaction that is on chain and will run.
+CREATION_EVENTS = ("NewTransaction", "CreatedTransaction")
+
+
+def created_transaction(w3, abi, receipt):
+    """(consensus tx id, event name) for the transaction a receipt created.
+
+    None if the receipt carries neither creation event.
+    """
+    contract = w3.eth.contract(abi=abi)
+    for event in CREATION_EVENTS:
+        found = contract.get_event_by_name(event).process_receipt(receipt, DISCARD)
+        if found:
+            return w3.to_hex(found[0]["args"]["txId"]), event
+    return None
 
 
 def show_receipt(receipt):
