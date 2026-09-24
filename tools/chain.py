@@ -28,9 +28,13 @@ The private key is read only from PROBE_PK. It is never read from a file or an
 argument, never written anywhere and never printed.
 """
 
+import http.client
 import json
 import os
+import re
 import sys
+import time
+import urllib.error
 import urllib.request
 
 import eth_utils
@@ -40,8 +44,10 @@ from genlayer_py.abi.transactions import serialize
 from genlayer_py.chains import testnet_bradbury
 from genlayer_py.contracts.actions import _encode_add_transaction_data
 from genlayer_py.contracts.utils import make_calldata_object
-from genlayer_py.types import TransactionHashVariant
+from genlayer_py.exceptions import GenLayerError
+from genlayer_py.types import TransactionHashVariant, TransactionStatus
 from web3.constants import ADDRESS_ZERO
+from web3.exceptions import TimeExhausted
 from web3.logs import DISCARD
 
 NETWORKS = {
@@ -131,7 +137,34 @@ def take_network(arguments):
     return name, rest
 
 
+class RpcUnavailable(OSError):
+    """The RPC gave no answer: a gateway 5xx or 429, an HTML page instead of
+    JSON-RPC, a dropped connection or a timeout.
+
+    Distinct from an answer, even an error answer: after one of these nobody
+    knows whether the node saw the request. An OSError, so every transient()
+    in these tools treats it as one.
+    """
+
+
+def _json_rpc(raw):
+    """The decoded body if it is a JSON-RPC answer, else None."""
+    try:
+        answer = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(answer, dict) and ("result" in answer or "error" in answer):
+        return answer
+    return None
+
+
 def rpc(net, method, params):
+    """One JSON-RPC request: the answer, or RpcUnavailable if there was none.
+
+    A JSON-RPC body is an answer whatever the HTTP status it came with. On 24
+    September eth_sendRawTransaction got "HTTP Error 522: <none>" from the
+    gateway, with no body, and that used to end the send with a traceback.
+    """
     body = json.dumps(
         {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     ).encode()
@@ -141,8 +174,228 @@ def rpc(net, method, params):
         # The RPC edge answers 403 to urllib's default User-Agent.
         headers={"Content-Type": "application/json", "User-Agent": "lacre/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=180) as response:
-        return json.loads(response.read())
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as error:
+        try:
+            answer = _json_rpc(error.read())
+        except (OSError, http.client.HTTPException):
+            answer = None
+        if answer is not None:
+            return answer
+        if error.code >= 500 or error.code == 429:
+            raise RpcUnavailable("%s: HTTP %d from the gateway" % (method, error.code)) from error
+        raise
+    except (OSError, http.client.HTTPException) as error:
+        raise RpcUnavailable("%s: %s: %s" % (method, type(error).__name__, error)) from error
+    answer = _json_rpc(raw)
+    if answer is None:
+        raise RpcUnavailable("%s: the answer is not JSON-RPC: %r" % (method, raw[:80]))
+    return answer
+
+
+# A read retried after RpcUnavailable: this many requests in all, the pause
+# doubling from the first, up to thirty seconds.
+READ_ATTEMPTS = 6
+READ_PAUSE_S = 2.0
+
+
+def rpc_read(net, method, params, attempts=READ_ATTEMPTS, sleep=None):
+    """rpc() for a request that changes nothing, asked again after no answer."""
+    sleep = sleep or time.sleep
+    for attempt in range(1, attempts + 1):
+        try:
+            return rpc(net, method, params)
+        except RpcUnavailable as error:
+            if attempt == attempts:
+                raise
+            pause = min(READ_PAUSE_S * 2 ** (attempt - 1), 30.0)
+            print("retry        : %s, asking again in %.0f s, attempt %d of %d"
+                  % (error, pause, attempt + 1, attempts))
+            sleep(pause)
+
+
+# Bradbury refuses a raw transaction when the node is at capacity: error
+# -32005, "transaction gas rate limit exceeded: node is at capacity, retry in
+# ~1659ms", data {"retryAfterMs":1659}. Nothing reaches the chain, so the same
+# signed bytes, same nonce and same hash, are broadcast again after the delay
+# the node asks for. They are never signed again.
+RATE_LIMITED = -32005
+BROADCAST_ATTEMPTS = 8
+RETRY_MARGIN_S = 0.5
+_RETRY_AFTER_MS = re.compile(r"retryAfterMs\W*(\d+)")
+_RETRY_IN_MS = re.compile(r"retry in ~?\s*(\d+)\s*ms")
+
+# How many times a wait resumes on the same hash after a transient RPC
+# failure, and the first pause, which doubles up to two minutes.
+WAIT_ATTEMPTS = 6
+WAIT_PAUSE_S = 10.0
+
+
+def retry_after(error):
+    """Seconds a refused broadcast asks to wait before trying again.
+
+    0.0 when the refusal says to retry without saying when, and None when it
+    is not a refusal that invites a retry.
+    """
+    if not isinstance(error, dict):
+        return None
+    text = json.dumps(error, sort_keys=True)
+    match = _RETRY_AFTER_MS.search(text) or _RETRY_IN_MS.search(text)
+    if match:
+        return int(match.group(1)) / 1000.0
+    if error.get("code") == RATE_LIMITED or str(RATE_LIMITED) in text or "retry in" in text:
+        return 0.0
+    return None
+
+
+# Answers that mean the node already holds these exact bytes: an earlier send
+# whose answer was lost got through. Geth says "already known", Nethermind
+# "AlreadyKnown", others "known transaction" or "already imported".
+_ALREADY_KNOWN = re.compile(r"already known|alreadyknown|already imported|known transaction|"
+                            r"already in (the )?(mem)?pool", re.I)
+# The nonce is spent. By this transaction, if an earlier send got through and
+# was mined; by another one otherwise. Only the hash lookup can tell which.
+_NONCE_TOO_LOW = re.compile(r"nonce too low|nonce has already been used|noncetoolow", re.I)
+
+# The first pause after no answer at all, doubling up to thirty seconds.
+TRANSPORT_PAUSE_S = 2.0
+
+
+def l2_known(net, l2_hash, sleep=None):
+    """Whether the node knows an L2 transaction, mined or pending.
+
+    None when that cannot be found out: the lookup got no answer either.
+    Read-only; eth_getTransactionByHash on the locally computed hash.
+    """
+    try:
+        out = rpc_read(net, "eth_getTransactionByHash", [l2_hash], sleep=sleep)
+    except RpcUnavailable:
+        return None
+    if out.get("error"):
+        return None
+    return out.get("result") is not None
+
+
+def broadcast(net, raw, l2_hash, attempts=BROADCAST_ATTEMPTS, sleep=None):
+    """eth_sendRawTransaction of one signed transaction; the hash it went as.
+
+    The same signed bytes can be sent any number of times and become at most
+    one transaction: the node takes them once, then says it already knows
+    them, or that their nonce is too low once they are mined. So they are
+    sent again, unchanged, after a refusal that asks for a retry (-32005,
+    "node is at capacity") and after no answer at all (a gateway 5xx, an HTML
+    page, a dropped connection, a timeout), up to attempts sends in all.
+    "Already known" is success. A spent nonce is success if l2_hash is known
+    to the node, and otherwise dies at once, like every other refusal.
+
+    When the attempts run out the hash is looked up, read-only, before dying:
+    if the node knows it, the send went through and this returns. The death
+    message says "not sent" only when the lookup says the node does not know
+    it, and "outcome unknown" when the lookup got no answer either.
+    """
+    sleep = sleep or time.sleep
+    reason = None
+    for attempt in range(1, attempts + 1):
+        try:
+            out = rpc(net, "eth_sendRawTransaction", [raw])
+        except RpcUnavailable as error:
+            reason = "no answer (%s)" % (error,)
+            pause = min(TRANSPORT_PAUSE_S * 2 ** (attempt - 1), 30.0)
+            what = "broadcast got %s" % (reason,)
+        else:
+            error = out.get("error")
+            if not error:
+                return out["result"]
+            message = str(error.get("message"))
+            if _ALREADY_KNOWN.search(json.dumps(error)):
+                print("note         : the node already has %s (%s); continuing as sent"
+                      % (l2_hash, message))
+                return l2_hash
+            delay = retry_after(error)
+            if delay is None:
+                if _NONCE_TOO_LOW.search(json.dumps(error)):
+                    if l2_known(net, l2_hash, sleep=sleep):
+                        print("note         : %s, and %s is on chain: an earlier send "
+                              "got through; continuing as sent" % (message, l2_hash))
+                        return l2_hash
+                    die("broadcast refused: %s; %s is not on chain, so another "
+                        "transaction holds this nonce" % (message, l2_hash))
+                die("broadcast refused: %s" % (message,))
+            reason = "refused: %s" % (message,)
+            pause = delay + RETRY_MARGIN_S if delay else min(2.0 ** (attempt - 1), 30.0)
+            what = "broadcast refused (code %s)" % (error.get("code"),)
+        if attempt == attempts:
+            break
+        print("retry        : %s, sending the same signed transaction again in "
+              "%.1f s, attempt %d of %d" % (what, pause, attempt + 1, attempts))
+        sleep(pause)
+
+    known = l2_known(net, l2_hash, sleep=sleep)
+    if known:
+        print("note         : the last answer was %s, but %s is on chain; "
+              "continuing as sent" % (reason, l2_hash))
+        return l2_hash
+    if known is None:
+        die("broadcast outcome unknown: %s after %d sends, and %s could not be "
+            "looked up; it may have been sent" % (reason, attempts, l2_hash))
+    die("not sent: %s after %d sends; %s is not on chain" % (reason, attempts, l2_hash))
+
+
+def transient(error):
+    """A dropped connection or an unreadable answer, not an answer.
+
+    genlayer-py wraps both in GenLayerError: "Request to ... failed" for a
+    connection that broke, "... returned invalid JSON" for a body that is not
+    JSON, such as a gateway's HTML error page. A revert is an answer.
+    """
+    if isinstance(error, OSError):
+        return True
+    if isinstance(error, GenLayerError):
+        message = str(error)
+        return message.startswith("Request to") or "returned invalid JSON" in message
+    return False
+
+
+def resilient(fn, what, attempts=WAIT_ATTEMPTS, pause=WAIT_PAUSE_S, sleep=None, also=()):
+    """fn(), called again after a transient failure, up to attempts times.
+
+    For reads, and for waits on a hash that is already known: calling again
+    resumes the same wait, it sends nothing. also names more exception
+    types to treat as transient here, such as a wait that timed out.
+    """
+    sleep = sleep or time.sleep
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as error:
+            if not (transient(error) or isinstance(error, also)) or attempt == attempts:
+                raise
+            wait = min(pause * 2 ** (attempt - 1), 120.0)
+            print("retry        : %s failed (%s), resuming in %.0f s, attempt %d of %d"
+                  % (what, type(error).__name__, wait, attempt + 1, attempts))
+            sleep(wait)
+
+
+def wait_accepted(client, tx_id, sleep=None):
+    """The SDK receipt once a consensus transaction is decided.
+
+    genlayer-py returns on ACCEPTED or on any decided state. A transient RPC
+    failure resumes the wait on the same tx id instead of losing it: on 24
+    September a deploy that had succeeded died on a gateway 520 here and
+    never printed its address.
+    """
+    return resilient(
+        lambda: client.wait_for_transaction_receipt(
+            transaction_hash=tx_id,
+            status=TransactionStatus.ACCEPTED,
+            interval=POLL_INTERVAL_MS,
+            retries=POLL_RETRIES,
+        ),
+        "the wait for %s" % (tx_id,),
+        sleep=sleep,
+    )
 
 
 def connect(name):
@@ -161,8 +414,9 @@ def connect(name):
     chain = net["chain"]
     chain.rpc_urls["default"]["http"] = [net["rpc_url"]]
     account = create_account(private_key)
-    client = create_client(chain=chain, account=account)
-    client.initialize_consensus_smart_contract()
+    # Both read from the node; nothing is signed or sent yet.
+    client = resilient(lambda: create_client(chain=chain, account=account), "connect")
+    resilient(client.initialize_consensus_smart_contract, "reading the consensus contracts")
 
     if int(client.chain.id) != net["chain_id"]:
         die("%s: the SDK chain id is %s, the table says %d"
@@ -238,7 +492,7 @@ def estimate(net, client, account, encoded, final=True, value=0):
     cap = net["max_tx_gas"]
     print("to           : %s (ConsensusMain)" % (consensus,))
     print("calldata     : %d hex chars" % (len(encoded),))
-    out = rpc(
+    out = rpc_read(
         net,
         "eth_estimateGas",
         [{
@@ -269,8 +523,14 @@ def estimate(net, client, account, encoded, final=True, value=0):
     return gas
 
 
-def send(net, client, account, encoded, estimated_gas, value=0):
-    """Sign, broadcast, print the L2 hash, then return the consensus tx id."""
+def send(net, client, account, encoded, estimated_gas, value=0, nonce=None):
+    """Sign, broadcast, print the L2 hash, then return the consensus tx id.
+
+    nonce pins the nonce a send must use, for a send that repeats one whose
+    outcome was "not sent": if the account has moved past it, something with
+    that nonce reached the chain after all, and this dies before signing
+    rather than send the same call a second time under the next nonce.
+    """
     consensus = client.chain.consensus_main_contract["address"]
     cap = net["max_tx_gas"]
     multiplier = net["gas_multiplier"]
@@ -278,11 +538,19 @@ def send(net, client, account, encoded, estimated_gas, value=0):
     if gas < estimated_gas:
         die("estimate %d already exceeds the cap %d" % (estimated_gas, cap))
 
-    latest = client.w3.eth.get_block("latest")
+    latest = resilient(lambda: client.w3.eth.get_block("latest"), "reading the latest block")
+    count = resilient(lambda: client.w3.eth.get_transaction_count(account.address),
+                      "reading the nonce")
+    if nonce is not None and nonce != count:
+        if nonce < count:
+            die("nonce %d is already used (the account is at %d): an earlier send "
+                "with it reached the chain; nothing was signed" % (nonce, count))
+        die("nonce %d is ahead of the account, which is at %d; nothing was signed"
+            % (nonce, count))
     priority = client.w3.to_wei(2, "gwei")
     transaction = {
         "from": account.address,
-        "nonce": client.w3.eth.get_transaction_count(account.address),
+        "nonce": count,
         "data": encoded,
         "to": consensus,
         "value": value,
@@ -305,15 +573,16 @@ def send(net, client, account, encoded, estimated_gas, value=0):
         print("L2 explorer  : %s" % (net["l2_explorer"] % (l2_hash,),))
     print("broadcasting ...")
 
-    out = rpc(net, "eth_sendRawTransaction", [raw])
-    if out.get("error"):
-        die("broadcast refused: %s" % (out["error"].get("message"),))
-    sent = out["result"]
+    sent = broadcast(net, raw, l2_hash)
     if sent.lower() != l2_hash.lower():
         print("note         : node returned a different hash: %s" % (sent,))
 
     print("waiting for the L2 receipt ...")
-    receipt = client.w3.eth.wait_for_transaction_receipt(sent, timeout=300)
+    # A wait that runs out resumes too: the transaction is known to the node
+    # and waiting again sends nothing.
+    receipt = resilient(
+        lambda: client.w3.eth.wait_for_transaction_receipt(sent, timeout=300),
+        "the wait for the L2 receipt of %s" % (sent,), also=(TimeExhausted,))
     used = receipt["gasUsed"]
     price = receipt.get("effectiveGasPrice", 0)
     print("L2 status    : %d (%s)"
@@ -392,7 +661,7 @@ def raw_read(net, client, address, method, args):
     exactly as read_contract decodes its own hex, and anything else prints the
     whole response and fails the read.
     """
-    response = rpc(net, "gen_call", [gen_call_params(client, address, method, args)])
+    response = rpc_read(net, "gen_call", [gen_call_params(client, address, method, args)])
     result = response.get("result")
     status = result.get("status") if isinstance(result, dict) else None
     code = status.get("code") if isinstance(status, dict) else None

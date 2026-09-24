@@ -35,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import chain
 from chain import POLL_INTERVAL_MS, POLL_RETRIES
-from genlayer_py.types import TransactionStatus
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOYMENTS = ROOT / "deployments.json"
@@ -99,14 +98,12 @@ def main():
     print("\nsubmitting deploy transaction ...")
     tx_id, _ = chain.send(net, client, account, encoded, gas)
 
-    print("\nwaiting for ACCEPTED (up to %d minutes) ..."
+    print("\nwaiting for ACCEPTED (up to %d minutes per attempt) ..."
           % (POLL_RETRIES * POLL_INTERVAL_MS // 60000,))
-    receipt = client.wait_for_transaction_receipt(
-        transaction_hash=tx_id,
-        status=TransactionStatus.ACCEPTED,
-        interval=POLL_INTERVAL_MS,
-        retries=POLL_RETRIES,
-    )
+    # Resumes on the same tx id after a dropped connection or a gateway error
+    # page: by now the deploy is on chain, and losing the wait loses the
+    # address.
+    receipt = chain.wait_accepted(client, tx_id)
 
     chain.show_receipt(receipt)
     decoded = receipt.get("tx_data_decoded") or {}
