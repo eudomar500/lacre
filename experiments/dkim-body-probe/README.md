@@ -1,5 +1,11 @@
 # DKIM body probe (Testnet Bradbury feasibility experiment)
 
+Note, 24 September 2026: the serving procedure in this probe, which takes the
+tunnel down once the write is ACCEPTED, predates the rule that a blob has to
+be served until the attestation is FINALIZED, because a validator re-fetches
+it during an appeal. For the production contract follow
+[docs/verifier.md](../../docs/verifier.md).
+
 ## What this measures
 
 The header probe in `experiments/dkim-onchain-probe/` verifies an RSA

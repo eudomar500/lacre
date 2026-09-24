@@ -1,5 +1,12 @@
 # Serving the blob for the length of one test
 
+Note, 24 September 2026: the URL is published on chain. It is part of the
+attest transaction's calldata, which is public from the moment the
+transaction is submitted, so the random hostname and path below protect
+nothing once the transaction is sent: anyone reading the chain can fetch the
+blob for as long as it is served. See
+[docs/interfaces.md](../../docs/interfaces.md), section 6.
+
 The contract is given a URL and nothing else. The blob behind that URL is one
 DKIM-Signature plus the headers it signs: no body, no recipient list, no
 attachments. It still identifies a message, so it is published under a random

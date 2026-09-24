@@ -3,14 +3,19 @@
 Lacre is signed evidence for Intelligent Contracts on GenLayer. An email that
 a domain has DKIM-signed is already a statement that domain will stand behind:
 the signature covers the headers, the public key is published in DNS, and
-anyone can check it. Lacre puts that check inside a contract. Validators fetch
-the signed headers and the sender's DNS key, verify the RSA signature
+anyone can check it. Lacre puts that check inside a contract. Validators read
+the signed headers, take the sender's key from the Registry, where it was
+recorded from DNS by validator consensus, verify the RSA signature
 independently, and agree on a small record: the signing domain, the selector,
 the body hash the signature claimed, a SHA-256 of the Message-ID, the key
 size, the verdict and a reason. Other contracts and agents read that record.
-No header value, address, subject or message body ever reaches calldata or
-storage, so a shipping confirmation or a payment receipt can be used as
-evidence on chain without publishing the message it came from.
+No message body reaches calldata or storage, and storage holds only the
+record: no address, To or Subject, and of the From header only its domain.
+Calldata is public: `attest_inline` puts every header in the blob in calldata
+permanently, and `attest` puts the blob's URL there, so anyone can fetch the
+headers while they are served. The Verifier checks the headers only; no
+deployed contract checks what a body says. See
+[docs/interfaces.md](docs/interfaces.md), section 6.
 
 The repository holds three things. The DKIM probes are the evidence that the
 check itself works. `experiments/dkim-probe/` is the off-chain verifier: pure
@@ -45,5 +50,7 @@ keeps the value it carried; v1.1 answers and refunds instead. See
 [experiments/dkim-onchain-probe/README.md](experiments/dkim-onchain-probe/README.md)
 and
 [experiments/value-probe-2/README.md](experiments/value-probe-2/README.md).
+
+The interface of every layer, for integrators and reviewers, is in [docs/interfaces.md](docs/interfaces.md).
 
 Status: research probes plus the Registry and the Verifier on a testnet.

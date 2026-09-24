@@ -28,7 +28,7 @@ itself.
 | `aligned` | true when `d=` and `from_domain` are equal or one is a subdomain of the other; see [Alignment](#alignment) |
 | `signed_at` | the signature's `t=` tag as an integer, 0 when absent or malformed |
 | `source` | `url` or `inline`, the method that wrote the record |
-| `requester` | the address that paid for the attestation |
+| `requester` | the address that sent the attestation transaction; it paid `fee_paid`, which is 0 while the fee is 0 |
 | `attested_at` | the runner's transaction datetime, stored unmodified |
 | `fee_paid` | the value that rode on the call, in wei |
 
@@ -44,8 +44,9 @@ The From address itself is never stored, only its domain part.
 
 On the `attest` path, no header value, address, subject, Message-ID or message
 body reaches calldata, storage or a log. The call carries a URL, a domain and
-a selector. The blob behind the URL is read inside the non-deterministic block
-and discarded there, and the only thing that leaves that block is the
+a selector. The URL itself is public calldata, so anyone reading the chain can
+fetch the headers behind it while they are served. The blob behind the URL is
+read inside the non-deterministic block and discarded there, and the only thing that leaves that block is the
 canonical string
 `bh|body_canon|sha256(message_id)|valid|reason|from_domain|aligned|signed_at`.
 
@@ -53,8 +54,10 @@ canonical string
 so every signed header, To and Subject included, is in calldata permanently.
 See [attest_inline](#attest_inline) for when that is the right trade.
 
-The Message-ID is present as a SHA-256 digest and nothing else: enough to
-prove that two attestations are about the same message, not enough to read it.
+The Message-ID is present as a SHA-256 digest and nothing else, not enough to
+read it. It ties two attestations to the same message only when the signature
+covers Message-ID, which the record does not say; an unsigned Message-ID is
+whatever the blob carries. See [interfaces.md](interfaces.md), section 4.7.
 An exception is recorded by its class name only, never by its text, because an
 exception's text can echo the URL.
 
@@ -83,14 +86,17 @@ the same condition that leaves `bh` empty.
 
 ## How a consumer reads a record
 
-From another contract, through the Registry:
+From another contract, at the Verifier address stored together with the
+record id, never re-resolved through the Registry for a decision: ids start
+at `"0"` on every Verifier, and the Registry pointer can move. See rules 1
+and 4 in [interfaces.md](interfaces.md#5-rules-for-integrators).
 
 ```python
-registry = gl.get_contract_at(Address(REGISTRY))
-verifier = gl.get_contract_at(Address(registry.view().version("verifier")))
+# VERIFIER is the address stored with record_id when the attestation was made.
+verifier = gl.get_contract_at(Address(VERIFIER)).view(state=StorageType.LATEST_FINAL)
 
-if verifier.view().check_for(record_id, "amazon.com", 1024, requester.as_hex):
-    record = verifier.view().get(record_id)
+if verifier.check_for(record_id, "amazon.com", 1024, requester.as_hex):
+    record = verifier.get(record_id)
     # record["bh"], record["body_canon"], record["message_id_sha256"] ...
 ```
 
@@ -106,12 +112,15 @@ the contract offers. It is true only if:
 - `aligned` is true,
 - the domain matches after lowercasing,
 - `key_bits` is at least `min_key_bits`,
-- `requester` is the address that paid for the record, compared as an
-  address, so the spelling (checksum case, lower case) does not matter.
+- `requester` is the address that sent the attestation transaction,
+  compared as an address, so the spelling (checksum case, lower case) does
+  not matter.
 
 The requester test is what stops a record from being replayed by anyone
-else: a record someone else paid for says nothing about the caller in front
-of the consumer. A malformed `requester` returns false rather than raising,
+else: a record someone else requested says nothing about the caller in front
+of the consumer. It does not stop anyone holding a copy of the same headers
+from attesting them as their own requester. A malformed `requester` returns
+false rather than raising,
 so a consumer never has to guard the call.
 A consumer that reads `get()` and compares the fields itself will sooner or
 later forget one of them, which is what this method exists to prevent.
@@ -186,8 +195,11 @@ relation instead, so two domains under different registrable domains of a
 shared suffix, such as `a.co.uk` and `b.co.uk`, are not aligned, by design.
 The cost is that a signer using a sibling subdomain of the From domain is
 reported as not aligned, where DMARC would accept it. That errs toward
-refusing. A signer whose `d=` is a bare public suffix is not a concern
-either: the key has to be in the Registry first.
+refusing. A signer whose `d=` is a bare public suffix is unlikely rather
+than excluded: `register_key` is open to anyone, so the only barrier is that
+a DKIM key has to be published at that DNS name. The parent direction is
+aligned, for example a From at `co.uk` signed with `d=anything.co.uk`; see
+[Known limits](interfaces.md#7-known-limits).
 
 Alignment is recorded, not enforced as validity: a record whose From domain
 does not align with `d=` stays `valid` with `aligned` false, and
@@ -290,7 +302,9 @@ Its rejections, all of them refunds rather than reverts:
   as the chain exists. It needs no server and nothing can go missing between
   the call and finalization. It is meant for agent inboxes, where the
   mailbox is an automated one and its To and Subject lines are not personal.
-- `attest` keeps To, Subject and every other header value off chain. The
+- `attest` keeps To, Subject and every other header value off chain, but
+  not private: the URL is in public calldata, and anyone who reads it can
+  fetch the headers while they are served. The
   price is availability: the blob has to be served at the URL until the
   transaction is FINALIZED, because a validator that re-runs the probe during
   an appeal fetches it again, and a blob that is gone by then turns into a
@@ -650,7 +664,11 @@ few comments, and the deployed file none. The reasoning behind it lives here.
 ## Serving a blob
 
 The blob is one DKIM-Signature plus exactly the headers it signs, cut with
-`experiments/dkim-probe/make_blob.py`, served at an unguessable HTTPS URL on a
-domain name until the attestation is FINALIZED and then removed. It is not
+`experiments/dkim-probe/make_blob.py`, served at an HTTPS URL on a domain name
+until the attestation is FINALIZED and then removed. The URL is published on
+chain: it is in the transaction's calldata, public from the moment the
+transaction is submitted, so a random name protects nothing once the
+transaction is sent, and anyone reading the chain can fetch the headers while
+they are served. It is not
 stored in this repository and no sample is tracked. See
 [experiments/dkim-onchain-probe/serve.md](../experiments/dkim-onchain-probe/serve.md).

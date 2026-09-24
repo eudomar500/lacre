@@ -1,5 +1,13 @@
 # Serving the body for the length of one test
 
+Note, 24 September 2026: the URL is published on chain. It is part of the
+attest transaction's calldata, which is public from the moment the
+transaction is submitted, so "anyone holding the hostname" below means
+anyone reading the chain, and the random hostname and filename protect
+nothing once the transaction is sent: the body can be fetched by anyone for
+as long as it is served. See
+[docs/interfaces.md](../../docs/interfaces.md), section 6.
+
 The mechanics are the header probe's, unchanged. Follow
 [../dkim-onchain-probe/serve.md](../dkim-onchain-probe/serve.md): what the
 validators accept, installing `cloudflared`, starting the quick tunnel,

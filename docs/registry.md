@@ -10,9 +10,11 @@ transactions behind them are under Deployments below.
 A GenLayer contract cannot be upgraded in place. A fix to the Verifier is a
 new deploy at a new address, and any contract or agent that hardcoded the old
 address is now pointing at the old code. The Registry is the indirection: it
-is deployed once, it never changes, and it answers two questions.
+is meant to keep its address while the contracts behind it change (it has
+been redeployed once, v0 to v1, before anything pointed at v0), and it
+answers two questions.
 
-1. Which Verifier and which Extractor are current.
+1. Which Verifier is current, and, once one is deployed, which Extractor.
 2. What RSA key a domain published under a selector, so that the question is
    settled once for all consumers instead of once per attestation.
 
@@ -27,8 +29,9 @@ DNS.
 
 ### Version pointers
 
-`versions` maps a name to an address. Two names are in use, `verifier` and
-`extractor`; the map takes any other name a later contract needs. Names are
+`versions` maps a name to an address. One name is in use, `verifier`;
+`extractor` is reserved for the planned Extractor, which is not deployed,
+and the map takes any other name a later contract needs. Names are
 lowercased and are limited to letters, digits, `-`, `.` and `_`.
 
 - `set_version(name, address) -> str` is owner only and returns the stored
@@ -86,7 +89,7 @@ DNS name the record was read from. Each record holds:
 `get_key(domain, selector) -> dict` returns the record or `{}`,
 `has_key(domain, selector) -> bool` answers without the payload,
 `key_count() -> int` counts the records, and `owner() -> str` returns the
-deployer.
+current owner, which is the deployer until ownership moves.
 
 ## The immutability rule
 
