@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Call one view on a deployed contract.
 
-Views cost no gas, but genlayer-py still needs a connected account to fill the
-`from` field of gen_call, so PROBE_PK has to be set. A contract that has not
-reached FINALIZED yet cannot be read at all.
+Views cost no gas and need no key: the client has no account and gen_call
+goes out from the zero address. PROBE_PK is never read. A contract that has
+not reached FINALIZED yet cannot be read at all.
 
 Arguments follow the same rule as tools/call.py: strings unless they read as
 an integer or as true or false, with "str:" to force a string.
 
 Usage:
-    export PROBE_PK=0x<64 hex chars>
     python3 tools/read.py <CONTRACT_ADDRESS> get_key amazon.com <selector>
     python3 tools/read.py <CONTRACT_ADDRESS> all_versions
     python3 tools/read.py <CONTRACT_ADDRESS> owner --network studionext
@@ -21,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import chain
+import txstate
 
 
 def show(value, indent=""):
@@ -44,7 +44,7 @@ def main():
     address, method = arguments[0], arguments[1]
     args = [chain.parse_arg(argument) for argument in arguments[2:]]
 
-    _, client, net = chain.connect(network)
+    client, net = txstate.connect_readonly(network)
     print("network      : %s (chain id %d)" % (network, net["chain_id"]))
     print("contract     : %s" % (address,))
     print("method       : %s%r" % (method, tuple(args)))

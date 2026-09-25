@@ -16,6 +16,7 @@ Usage:
     python3 tools/call.py <CONTRACT_ADDRESS> key_count --network studionext
 """
 
+import socket
 import sys
 import time
 from pathlib import Path
@@ -23,8 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import chain
+import txstate
 from chain import POLL_INTERVAL_MS, POLL_RETRIES
-from genlayer_py.types import TransactionStatus
 
 
 def take_value(arguments):
@@ -51,6 +52,9 @@ def take_value(arguments):
 
 
 def main():
+    # The SDK calls requests without a timeout; a stalled connection has to
+    # fail so the wait can resume.
+    socket.setdefaulttimeout(txstate.SOCKET_TIMEOUT)
     network, arguments = chain.take_network(sys.argv[1:])
     value, arguments = take_value(arguments)
     if len(arguments) < 2:
@@ -74,14 +78,15 @@ def main():
     started = time.time()
     tx_id, l2_gas = chain.send(net, client, account, encoded, gas, value=value)
 
-    print("\nwaiting for ACCEPTED (up to %d minutes) ..."
+    print("\nwaiting for a decision (up to %d minutes per attempt) ..."
           % (POLL_RETRIES * POLL_INTERVAL_MS // 60000,))
-    receipt = client.wait_for_transaction_receipt(
-        transaction_hash=tx_id,
-        status=TransactionStatus.ACCEPTED,
-        interval=POLL_INTERVAL_MS,
-        retries=POLL_RETRIES,
-    )
+    # The transaction is on chain by now; losing the wait loses nothing but
+    # the answer, so every failure that can be waited out is.
+    try:
+        receipt = txstate.wait_for_decision(client, tx_id)
+    except RuntimeError as error:
+        chain.die("%s; the transaction is on chain, check it at %s/tx/%s"
+                  % (error, net["explorer"], tx_id))
     elapsed = time.time() - started
 
     chain.show_receipt(receipt)

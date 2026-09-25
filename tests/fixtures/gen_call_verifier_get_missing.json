@@ -1,0 +1,87 @@
+{
+ "to": "0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d",
+ "method": "get",
+ "args": [
+  "0"
+ ],
+ "response": {
+  "jsonrpc": "2.0",
+  "result": {
+   "data": "06",
+   "eqOutputs": [],
+   "status": {
+    "code": 0,
+    "message": "success"
+   },
+   "stdout": "",
+   "stderr": "",
+   "logs": [
+    {
+     "file": "common/src/lib.rs:111",
+     "level": "info",
+     "message": "logging initialized",
+     "target": "genvm_common",
+     "ts": "1790298515821",
+     "version": "v0.2.11-x86_64-linux-release"
+    },
+    {
+     "file": "src/exe/run.rs:150",
+     "genvm_id": "4998133",
+     "level": "info",
+     "message": "genvm id",
+     "target": "genvm::exe::run",
+     "ts": "1790298515822"
+    },
+    {
+     "default": "v0.1.0",
+     "file": "src/runners/parse.rs:88",
+     "level": "warn",
+     "message": "runner comment does not start with version, using default",
+     "target": "genvm::runners::parse",
+     "ts": "1790298515833"
+    },
+    {
+     "file": "src/lib.rs:299",
+     "level": "info",
+     "message": "metrics",
+     "metrics": {
+      "gvm": {
+       "host": {
+        "time": 8706
+       },
+       "llm_module": {
+        "calls": 0,
+        "time": 0
+       },
+       "supervisor": {
+        "compilation_time": 0,
+        "compiled_modules": 0,
+        "precompile_hits": 2
+       },
+       "web_module": {
+        "calls": 0,
+        "time": 0
+       }
+      },
+      "llm": null,
+      "web": null
+     },
+     "target": "genvm",
+     "ts": "1790298516022"
+    },
+    {
+     "file": "src/exe/run.rs:111",
+     "level": "warn",
+     "message": "sigterm received",
+     "target": "genvm::exe::run",
+     "ts": "1790298516022"
+    }
+   ],
+   "events": [],
+   "messages": [],
+   "nondetDisagreementCallNo": null,
+   "syncedBlock": "0x15b7137"
+  },
+  "id": 1
+ }
+}

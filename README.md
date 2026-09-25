@@ -53,4 +53,18 @@ and
 
 The interface of every layer, for integrators and reviewers, is in [docs/interfaces.md](docs/interfaces.md).
 
+## Tools
+
+`tools/` holds the production scripts: `deploy.py`, `call.py`, `read.py`,
+which needs no key, and `attest.py`, the reference client for the Verifier.
+`attest.py` exits 0 only once the attesting transaction is FINALIZED with an
+AGREE result and FINISHED_WITH_RETURN, and the record has been read back at
+`LATEST_FINAL` with the sender as its requester. A refusal is reported with
+its reason and not sent again. A transaction that finalized without
+executing, whose value the protocol refunds, is sent again as a new one, up
+to `--attempts`; anything it cannot judge, such as an appeal in progress or
+a failed read, stops it with the consensus tx id and nothing more is sent.
+Each outcome has its own exit code, listed in the script. The rules it
+follows are in [docs/interfaces.md](docs/interfaces.md), section 5.
+
 Status: research probes plus the Registry and the Verifier on a testnet.

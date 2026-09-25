@@ -109,6 +109,34 @@ def die(message):
     sys.exit(1)
 
 
+# What SendFailed.kind says about a send that did not go through.
+NOT_SENT = "not sent"
+OUTCOME_UNKNOWN = "outcome unknown"
+REFUSED = "refused"
+NONCE_MOVED = "nonce moved"
+
+
+class SendFailed(SystemExit):
+    """die() for a send that did not go through, with the reason kept.
+
+    It exits 1 with the same message as die(), so deploy.py and call.py are
+    unchanged; attest.py catches it to tell a broadcast that is known not to
+    have been sent, which may be repeated, from one that must not be.
+    """
+
+    def __init__(self, kind, message, l2_hash=None, nonce=None):
+        super().__init__(1)
+        self.kind = kind
+        self.message = message
+        self.l2_hash = l2_hash
+        self.nonce = nonce
+
+
+def fail_send(kind, message, l2_hash=None):
+    print("error: %s" % (message,), file=sys.stderr)
+    raise SendFailed(kind, message, l2_hash)
+
+
 def take_network(arguments):
     """Pull --network out of an argument list, leaving the positional ones.
 
@@ -320,9 +348,10 @@ def broadcast(net, raw, l2_hash, attempts=BROADCAST_ATTEMPTS, sleep=None):
                         print("note         : %s, and %s is on chain: an earlier send "
                               "got through; continuing as sent" % (message, l2_hash))
                         return l2_hash
-                    die("broadcast refused: %s; %s is not on chain, so another "
-                        "transaction holds this nonce" % (message, l2_hash))
-                die("broadcast refused: %s" % (message,))
+                    fail_send(NONCE_MOVED, "broadcast refused: %s; %s is not on chain, so "
+                              "another transaction holds this nonce" % (message, l2_hash),
+                              l2_hash)
+                fail_send(REFUSED, "broadcast refused: %s" % (message,), l2_hash)
             reason = "refused: %s" % (message,)
             pause = delay + RETRY_MARGIN_S if delay else min(2.0 ** (attempt - 1), 30.0)
             what = "broadcast refused (code %s)" % (error.get("code"),)
@@ -338,9 +367,11 @@ def broadcast(net, raw, l2_hash, attempts=BROADCAST_ATTEMPTS, sleep=None):
               "continuing as sent" % (reason, l2_hash))
         return l2_hash
     if known is None:
-        die("broadcast outcome unknown: %s after %d sends, and %s could not be "
-            "looked up; it may have been sent" % (reason, attempts, l2_hash))
-    die("not sent: %s after %d sends; %s is not on chain" % (reason, attempts, l2_hash))
+        fail_send(OUTCOME_UNKNOWN, "broadcast outcome unknown: %s after %d sends, and %s "
+                  "could not be looked up; it may have been sent" % (reason, attempts, l2_hash),
+                  l2_hash)
+    fail_send(NOT_SENT, "not sent: %s after %d sends; %s is not on chain"
+              % (reason, attempts, l2_hash), l2_hash)
 
 
 def transient(error):
@@ -543,10 +574,11 @@ def send(net, client, account, encoded, estimated_gas, value=0, nonce=None):
                       "reading the nonce")
     if nonce is not None and nonce != count:
         if nonce < count:
-            die("nonce %d is already used (the account is at %d): an earlier send "
-                "with it reached the chain; nothing was signed" % (nonce, count))
-        die("nonce %d is ahead of the account, which is at %d; nothing was signed"
-            % (nonce, count))
+            fail_send(NONCE_MOVED, "nonce %d is already used (the account is at %d): an "
+                      "earlier send with it reached the chain; nothing was signed"
+                      % (nonce, count))
+        fail_send(NONCE_MOVED, "nonce %d is ahead of the account, which is at %d; nothing "
+                  "was signed" % (nonce, count))
     priority = client.w3.to_wei(2, "gwei")
     transaction = {
         "from": account.address,
@@ -573,7 +605,12 @@ def send(net, client, account, encoded, estimated_gas, value=0, nonce=None):
         print("L2 explorer  : %s" % (net["l2_explorer"] % (l2_hash,),))
     print("broadcasting ...")
 
-    sent = broadcast(net, raw, l2_hash)
+    try:
+        sent = broadcast(net, raw, l2_hash)
+    except SendFailed as failure:
+        # The nonce a repeat has to be pinned to.
+        failure.nonce = transaction["nonce"]
+        raise
     if sent.lower() != l2_hash.lower():
         print("note         : node returned a different hash: %s" % (sent,))
 
@@ -636,8 +673,13 @@ def show_receipt(receipt):
             print("%-13s: %s" % (key, receipt[key]))
 
 
-def gen_call_params(client, address, method, args):
-    """Exactly the gen_call params genlayer_py.read_contract builds."""
+def gen_call_params(client, address, method, args,
+                    variant=TransactionHashVariant.LATEST_NONFINAL):
+    """Exactly the gen_call params genlayer_py.read_contract builds.
+
+    A client with no account reads from the zero address, which Bradbury
+    accepts for a view: nothing is signed, so nothing needs a key.
+    """
     data = [
         calldata.encode(make_calldata_object(method=method, args=args, kwargs=None)),
         b"\x00",
@@ -645,13 +687,14 @@ def gen_call_params(client, address, method, args):
     return {
         "type": "read",
         "to": address,
-        "from": client.local_account.address,
+        "from": client.local_account.address if client.local_account else ADDRESS_ZERO,
         "data": serialize(data),
-        "transaction_hash_variant": TransactionHashVariant.LATEST_NONFINAL.value,
+        "transaction_hash_variant": variant.value,
     }
 
 
-def raw_read(net, client, address, method, args):
+def raw_read(net, client, address, method, args,
+             variant=TransactionHashVariant.LATEST_NONFINAL):
     """Recover the result genlayer-py could not read, or report why not.
 
     Bradbury answers gen_call with {"data": "<hex>", "status": {...}, ...},
@@ -661,7 +704,8 @@ def raw_read(net, client, address, method, args):
     exactly as read_contract decodes its own hex, and anything else prints the
     whole response and fails the read.
     """
-    response = rpc_read(net, "gen_call", [gen_call_params(client, address, method, args)])
+    response = rpc_read(net, "gen_call",
+                        [gen_call_params(client, address, method, args, variant)])
     result = response.get("result")
     status = result.get("status") if isinstance(result, dict) else None
     code = status.get("code") if isinstance(status, dict) else None
@@ -684,9 +728,17 @@ def raw_read(net, client, address, method, args):
     return UNKNOWN
 
 
-def read(net, client, address, method, args):
-    """A view call, falling back to the raw RPC on the decoding bug above."""
+def read(net, client, address, method, args,
+         variant=TransactionHashVariant.LATEST_NONFINAL):
+    """A view call, falling back to the raw RPC on the decoding bug above.
+
+    A client with no account goes to the raw RPC directly: genlayer-py
+    refuses to read without one.
+    """
+    if client.local_account is None:
+        return raw_read(net, client, address, method, args, variant)
     try:
-        return client.read_contract(address=address, function_name=method, args=args)
+        return client.read_contract(address=address, function_name=method, args=args,
+                                    transaction_hash_variant=variant)
     except TypeError:
-        return raw_read(net, client, address, method, args)
+        return raw_read(net, client, address, method, args, variant)
