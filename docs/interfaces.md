@@ -40,6 +40,8 @@ per contract name. The retired addresses and their transactions come from
 [docs/registry.md](registry.md), [docs/verifier.md](verifier.md) and the
 chain.
 
+Every contract entry in `deployments.json`, the two value probes aside, carries the commit its source came from and the SHA-256 of the exact source sent on chain, and a reader checks one with `python3 tools/verify_deploy.py <name or address>`, which reads the source back from the deploy transaction without a key and compares it with both (section 8); `verifier_v1` is the one retired contract kept there, for its hash alone, with its commit recorded as unknown.
+
 | layer | version | status | address | deploy consensus tx | date (UTC) |
 |-------|---------|--------|---------|---------------------|------------|
 | Registry | v1 | current | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | `0x88e06a33bfd5c35dabe4ef49bb0cd69a208eed942dca60576bc08bed6e275058` | 2026-09-23 14:14 |
@@ -671,8 +673,9 @@ Bradbury on 24 September 2026, measured the design it will use:
 
 ## 8. Planned, not deployed
 
-Every item in this section is a proposal. None of it is deployed, and all of
-it is subject to change.
+Every item in this section is a proposal, except the last one, deploy
+provenance, which is tooling and is in place. None of it is deployed, and all
+of the proposals are subject to change.
 
 - **Registry v2 (proposal).**
   - Pinned versions: a consumer can call a specific Verifier version by a
@@ -714,12 +717,34 @@ it is subject to change.
   produced it.
 - **Build provenance (proposal).** The library version and hash recorded for
   every deployment.
-- **Deploy provenance (proposal).** `tools/deploy.py` refuses to deploy from
-  a working tree with uncommitted changes, and records the commit and the
-  SHA-256 of the deployed source in `deployments.json`. Every contract so
-  far was deployed before the commit that contains it. The deployed bytes
-  of Registry v1 and Verifier v1.1 match commit `a56f1c9` exactly. The
-  Verifier v1 build is not in the repository history.
+- **Deploy provenance (in place).** `tools/deploy.py` checks the working
+  tree before it reads the key or touches the network. It refuses to deploy,
+  and prints what is wrong, when a tracked file has uncommitted changes, when
+  an untracked file sits under `contracts/`, `lacre/` or the source path,
+  when git does not track the source, or when the artifact is not what the
+  `build.py` beside it produces now. `--allow-dirty` deploys anyway, for
+  probes, and the entry then says `commit_dirty: true`. Each new entry
+  records `commit` (the full sha), `commit_dirty`, `source_path`,
+  `source_sha256` and `source_size` of the exact bytes sent, which is the
+  built artifact and not the template, and `inlined_modules`, the SHA-256 of
+  every `lacre/` module the build inlined, by file name. The same facts are
+  printed before the deploy proceeds, so they are in the deploy log.
+  `tools/verify_deploy.py` takes a contract name or an address from
+  `deployments.json`, is read-only and needs no key. It reads the stored
+  deploy transaction from ConsensusData, takes the source out of its
+  calldata, and compares its SHA-256 with the recorded address, hash and
+  size, with the file and with the build at the recorded commit, and checks
+  the recorded module hashes against that commit. It prints match, MISMATCH
+  or cannot check for each item and exits 1 on any mismatch. For an entry
+  with no commit it lists the checks it cannot make and compares the chain
+  bytes with the current build instead. Every contract so far was deployed
+  before the commit that contains it, so the existing entries were
+  backfilled on 2026-09-26 with what could be proven, and say so: the
+  deployed bytes of Registry v1 and Verifier v1.1 equal the build at commit
+  `a56f1c9`, which they record with the module hashes at that commit, and
+  Verifier v1, whose build is not in the repository history, records only
+  the SHA-256 of its deployed source, as `verifier_v1`, with the commit
+  unknown. The value probes' entries are unchanged.
 
 ## 9. Related work
 

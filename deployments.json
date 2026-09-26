@@ -2,8 +2,16 @@
   "bradbury": {
     "registry": {
       "address": "0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc",
+      "commit": "a56f1c965687614cb15b6ac42cfbb7f7da285a5d",
       "consensus_tx": "0x88e06a33bfd5c35dabe4ef49bb0cd69a208eed942dca60576bc08bed6e275058",
-      "deployed_at": "2026-09-23T14:14:11+00:00"
+      "deployed_at": "2026-09-23T14:14:11+00:00",
+      "inlined_modules": {
+        "dkimkey.py": "93e04f5410f5af23286d14723898086303b58572050ab63c40eeac4b5ce50cda"
+      },
+      "provenance": "established after the fact on 2026-09-26: the source in the deploy transaction is byte for byte contracts/registry/registry.py as committed and as built at this commit; the tree it was deployed from is not known, the deploy predates the commit",
+      "source_path": "contracts/registry/registry.py",
+      "source_sha256": "5a122451772568136bbce051910e18e799d00bac3affb75e793a8261a743b7d7",
+      "source_size": 11646
     },
     "value_probe": {
       "address": "0x22eB139537F8c77043cFF308727A778dFcaDCd33",
@@ -17,8 +25,23 @@
     },
     "verifier": {
       "address": "0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d",
+      "commit": "a56f1c965687614cb15b6ac42cfbb7f7da285a5d",
       "consensus_tx": "0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e",
-      "deployed_at": "2026-09-23T16:01:35+00:00"
+      "deployed_at": "2026-09-23T16:01:35+00:00",
+      "inlined_modules": {
+        "dkimcore.py": "834bbcdbeac807610953f91148638002ba2280c35ed2bac028d8f2eb72301b92"
+      },
+      "provenance": "established after the fact on 2026-09-26: the source in the deploy transaction is byte for byte contracts/verifier/verifier.py as committed and as built at this commit; the tree it was deployed from is not known, the deploy predates the commit",
+      "source_path": "contracts/verifier/verifier.py",
+      "source_sha256": "958575543034567ae8bfde185ae50f1f79cbb375e326db8fa8759d9a942906ea",
+      "source_size": 16912
+    },
+    "verifier_v1": {
+      "address": "0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a",
+      "commit": null,
+      "consensus_tx": "0x7b214b0f273c5c1b4135a7ed482cbab9b521c373ac88da3e57ba63f2d43132bc",
+      "provenance": "established after the fact on 2026-09-26: retired by set_version, kept for its source hash; the deployed source matches no commit in the repository history, so the commit is unknown",
+      "source_sha256": "e3a417a722f3a1e46eb4a91e61e94b25ce4cde5b4ac19fdb391cc3aa491e1173"
     }
   }
 }
