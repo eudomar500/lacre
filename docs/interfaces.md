@@ -457,7 +457,100 @@ of the following were true when the record was written:
    section 7, first registration is permanent).
 9. A caller of `attest` or `attest_inline` SHOULD send exactly `fee()` and
    MUST treat a return value that is not all digits as a rejection whose
-   refund arrives at FINALIZED.
+   refund arrives at FINALIZED. On Verifier v1.1 that return value cannot
+   be read from the chain (rule 15), so a caller learns of a rejection the
+   way rule 15 describes.
+10. **An attestation exists only as a record.** An attestation exists only
+    when its record can be read from the Verifier at `LATEST_FINAL`. A
+    transaction status, the explorer's "Return Value" or an
+    `eqBlocksOutputs` reading is not proof that state was written: probe D2
+    call 36 FINALIZED with result TIMEOUT and its reading visible in
+    `eqBlocksOutputs`, and wrote no record
+    ([experiments/llm-probe-2](../experiments/llm-probe-2/README.md),
+    Findings, "Call 36"; the incident run of the same day had two FINALIZED
+    AGREE transactions that left no record either). Consumers MUST decide on
+    the record. A missing record is "no attestation", whatever the
+    transaction shows.
+11. **Executed means three things at once.** A call executed only when its
+    stored status is ACCEPTED or FINALIZED, its result is AGREE (or
+    MAJORITY_AGREE), and its execution result is FINISHED_WITH_RETURN
+    (`executed()` in `tools/txstate.py`). None of the three alone is enough:
+    GenLayer's documentation says an Accepted receipt "can represent a
+    successful return, a user error, a GenVM error, or a timeout", and that
+    Finalized "does not convert an error result into a successful contract
+    call"
+    ([transaction statuses](https://docs.genlayer.com/understand-genlayer-protocol/core-concepts/transactions/transaction-statuses)).
+    A client that sends attestations MUST apply the confirmation protocol of
+    `tools/attest.py`: send, wait for FINALIZED on the stored status, read
+    the record, and send again only after a finalization without execution
+    (or an executed finalization whose record cannot be read at
+    `LATEST_FINAL`). It MUST NOT send again while an appeal is in progress,
+    while the transaction is CANCELED, or while it is undecided. Sending
+    again can, in the worst case, produce two records for one attestation;
+    both are valid records (rule 4 and rule 5 already key on record ids and
+    on signed values).
+12. **Value on calls that do not execute.** On Bradbury (consensus v0.5,
+    commit `9c68608`, which has no consensus fee budget) the value of a call
+    that finalizes without executing (UNDETERMINED, VALIDATORS_TIMEOUT or
+    LEADER_TIMEOUT) is refunded in full to the sender inside the
+    finalization transaction. Only the L2 gas of the submission is lost.
+    This was read from the chain on 24 September 2026 on 8 paid,
+    non-executed transactions from other senders, for example the two 20 GEN
+    LEADER_TIMEOUT refunds in L2 blocks 21486001 and 21487655, where the
+    finalization is the only transaction in the block. A refusal by the
+    Verifier is different: it executes, and the Verifier returns the value
+    by its own message (section 4.2). The value of every activated call
+    moves into the Verifier's balance at activation, so between activation
+    and finalization that balance includes value of transactions that may
+    never execute. The owner MUST NOT withdraw the whole balance (see
+    [docs/verifier.md](verifier.md), Operations). A sender MUST be able to
+    receive GEN: the protocol's refund path has an event,
+    `ValueWithdrawalFailed(txId, recipient, value)`, for a transfer that
+    fails, and where the value goes after it was not verified. All 8
+    senders observed were externally owned accounts.
+13. **One call at a time per contract.** Transactions to one contract are
+    processed one at a time: ConsensusMain does not activate a transaction
+    while an earlier one to the same contract is undecided, and queues it
+    instead (it emits CreatedTransaction rather than NewTransaction). The
+    queue holds 20 transactions per contract, and beyond that a send reverts
+    with PendingQueueFull (probe D2, "Incident on 24 September"). When the
+    network is healthy that is about one decided call per minute; in probe
+    D2's clean run, on a degraded network, windows of ten calls took 24 to
+    31 minutes. Clients MUST NOT send a second call to the same contract
+    before the first is decided. A gateway serving many agents SHOULD
+    expect roughly 1,400 attestations per day per Verifier at best, and
+    SHOULD plan for several Verifiers behind the Registry.
+14. **Status semantics.** A stored CANCELED is not final: in the probe D2
+    incident, queued transactions stored as CANCELED were later activated
+    and FINALIZED. The timestamped views (`getTransactionData`,
+    `getTransactionStatus`) also report a queued transaction as CANCELED
+    from 1800 s after its creation while its stored status is still PENDING,
+    and can report a status number the SDK does not know: 14 was returned on
+    16 of probe D2's calls, and genlayer-py 0.16.3 fails on it with a
+    KeyError. Status 11 (READY_TO_FINALIZE in the SDK) has not been seen on
+    Bradbury. Status 12 is named VALIDATORS_TIMEOUT by the SDK but was never
+    returned for a Lacre transaction; it appears on Bradbury only as the
+    previous status of other senders' finalizations, and its name is not
+    confirmed by source. Status 13 is LEADER_TIMEOUT (probe D2 call 36). A
+    DETERMINISTIC_VIOLATION vote in the final round is how a validator's
+    disagreement with the leader's reading is recorded, not a fault in the
+    contract: every such vote in probe D2 came from a validator whose result
+    hash differed from the leader's, on a contested reading. Clients SHOULD
+    read the stored status through the consensus contracts
+    (`ConsensusData.getTransactionAllData`, as `tools/txstate.py` does) and
+    SHOULD treat a status number they do not know as undecided.
+15. **Every outcome of a write must be a view.** The return value of a write
+    call cannot be read from the chain: `eqBlocksOutputs` holds only the
+    output of the non-deterministic block, and `attest_inline` has none, so
+    neither a record id nor a refusal reason is available after the fact.
+    Every outcome of a write MUST therefore be exposed by a view. On
+    Verifier v1.1, `tools/attest.py` copes by reading `count()` before the
+    first attempt and scanning the records written since for one whose
+    `requester`, `domain`, `selector`, `source` and `fee_paid` match the
+    call, and, when there is none, by deriving the refusal reason from
+    running the Verifier's own checks read-only, in the Verifier's order.
+    The planned Verifier v1.2 adds `records_of(requester)` and
+    `last_refusal(requester)` for this (section 8).
 
 ## 6. Evidence and verdict
 
@@ -480,6 +573,29 @@ What remains on chain besides the record depends on the path:
   remains is the record and the fact that the validators agreed on it. The
   URL is public in calldata from the moment the transaction is submitted, so
   anyone who reads the chain can fetch the headers while they are served.
+
+### 6.1 The model-reading lane (measured, not deployed)
+
+No model-reading lane is deployed. Probe D2
+([experiments/llm-probe-2](../experiments/llm-probe-2/README.md)), run on
+Bradbury on 24 September 2026, measured the design it will use:
+
+- **The hardened prompt builder**, `llm/prompt.py` in the probe, as it is:
+  the body is sanitized, placed between markers tagged with a hash of the
+  body, quoted as one JSON string, and surrounded by the rules on both
+  sides. 40 of 40 final readings were correct on `shipped` and `eta`,
+  including the delimiter attack that fooled every validator in probe D (4
+  of 4 refused).
+- **Strict equality on `shipped` and `eta` only.** The injection question
+  is asked but kept out of the compared value: comparing it caught nothing
+  the reading did not, and the calls that compared it drew 8
+  DETERMINISTIC_VIOLATION votes in 30 against 1 in 10.
+- **A deterministic prefilter in front of the model**, `llm/prefilter.py`.
+  Measured locally, it flags 6 of the 8 attack bodies and neither ordinary
+  body, so it sits in front of the builder and does not replace it.
+- **The record carries the method** that produced the reading, and the
+  consumer decides on the record, not on the transaction (section 5, rule
+  10).
 
 ## 7. Known limits
 
@@ -535,6 +651,23 @@ What remains on chain besides the record depends on the path:
 - **Inline blobs are text.** `attest_inline` encodes its argument as UTF-8,
   so headers with raw 8-bit bytes cannot be carried inline without breaking
   the signature. They have to go through `attest`.
+- **Throughput.** One call at a time per contract, about one a minute on a
+  healthy network, and at most 20 queued behind it (section 5, rule 13).
+  One Verifier serves roughly 1,400 attestations a day at best.
+- **Status semantics.** A stored CANCELED is not final, the timestamped
+  views report CANCELED early and return numbers the SDK cannot name (14),
+  11 and 12 are unconfirmed on Bradbury, and DETERMINISTIC_VIOLATION is a
+  disagreement vote, not a contract fault (section 5, rule 14).
+- **Return values of writes are not readable.** Neither the record id nor
+  the refusal reason of an `attest` call can be read from the chain after
+  the fact, so on Verifier v1.1 a client has to find its record by scanning
+  and derive a refusal by rerunning the checks (section 5, rule 15).
+- **The refund of non-executed calls is silent and undocumented.** The
+  protocol returns the value of a call that finalizes without executing
+  inside the finalization transaction, but the refund emits no event of its
+  own and no public source or documentation describes it for Bradbury's
+  consensus v0.5. It was verified on 8 transactions from other senders,
+  from balances read at the finalization blocks (section 5, rule 12).
 
 ## 8. Planned, not deployed
 
@@ -565,6 +698,16 @@ it is subject to change.
     this way should be rare, and a suspicious key stops working as soon as
     anyone calls `refresh_key`. Cost: mail signed with the previous key
     under a reused selector can no longer be attested.
+  - `records_of(requester)`, the ids of the records a requester's calls
+    wrote, and `last_refusal(requester)`, the reason of that requester's
+    last refused call. Rationale: the return value of a write cannot be
+    read from the chain (section 5, rule 15), so every outcome needs a
+    view.
+- **Pre-paid balances: not planned for Bradbury.** The per-call value model
+  is kept, because the protocol already refunds the value of calls that do
+  not execute (section 5, rule 12). Pre-paid balances are a study item for
+  mainnet, to be revisited if mainnet runs consensus v0.6 with a fee
+  budget.
 - **Extractors (proposal).** Two separate Extractor contracts, one using
   patterns and one reading with a model, each behind its own selector, so
   that a flaw in one cannot affect the other. Each record says which method
@@ -595,3 +738,7 @@ permanently, with no administrator in the path that writes a key. New
 senders are added as data, not as circuits. Validators can interpret
 content. Lacre gives up privacy toward validators, which ZK Email keeps, and
 it is far less mature.
+
+The value-refund and confirmation rules of section 5 (rules 10 to 14) are
+network behaviour that any GenLayer contract inherits, not Lacre-specific
+design.

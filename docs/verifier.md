@@ -421,9 +421,11 @@ whole balance in one call.**
 A refused `attest` queues a refund that is paid when its transaction
 FINALIZES, and `self.balance` counts that money until then. So between an
 ACCEPTED refusal and its finalization the contract reports a balance it does
-not entirely own. The contract does not track the difference: there is no
-pending-refund counter and `withdraw` will happily send the full reported
-balance.
+not entirely own. The value of a call that finalizes without executing
+sits in the balance the same way, from activation until finalization, when
+the protocol returns it to the sender. The contract does not track the
+difference: there is no pending-refund counter and `withdraw` will happily
+send the full reported balance.
 
 What that means in practice:
 
