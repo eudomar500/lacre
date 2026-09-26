@@ -152,6 +152,8 @@ MAX_FIELD = 255
 MAX_REASON = 96
 MAX_BLOB = 16384
 MAX_URL = 512
+SCHEMA_VERSION = "2"
+NO_L = "body length limit not supported"
 
 ZERO_ADDRESS = Address(bytes(20))
 
@@ -239,6 +241,8 @@ def attest_blob(blob, domain, selector, n, e, now):
             break
     else:
         return failure("signature does not match domain or selector")
+    if "l" in tags:
+        return failure(NO_L)
     fields = [fields[index]] + fields[:index] + fields[index + 1:]
     ok, info = verify_headers(b"".join(name + b":" + value + b"\r\n" for name, value in fields), n, e)
     identifier = info["message_id"]
@@ -295,13 +299,6 @@ def shown(address):
     return "" if address == ZERO_ADDRESS else address.as_hex
 
 
-def refuse(reason):
-    paid = int(gl.message.value)
-    if paid:
-        _Recipient(gl.message.sender_address).emit_transfer(value=u256(paid))
-    return reason
-
-
 def require_owner(owner):
     if gl.message.sender_address != owner:
         raise gl.vm.UserError("[EXPECTED] owner only")
@@ -314,16 +311,27 @@ def require_amount(amount, held):
     return wei
 
 
-def registry_key(registry, domain, selector):
+def cached_key(router, domain, selector):
+    final = StorageType.LATEST_FINAL
     try:
-        record = gl.get_contract_at(registry).view(state=StorageType.LATEST_FINAL).get_key(domain, selector)
+        cache = gl.get_contract_at(router).view(state=final).resolve("keycache")
+    except Exception:
+        return "router unreadable", {}, 0, 0
+    if not cache:
+        return "router resolves no keycache", {}, 0, 0
+    try:
+        record = gl.get_contract_at(Address(cache)).view(state=final).key_status(domain, selector)
+        state = record.get("state", "")
+        if state != "active":
+            return ("key " + state if state in ("pending", "rotated", "retired")
+                    else "key not registered"), {}, 0, 0
         modulus = int(record["n_hex"], 16)
         exponent = as_number(record["e"])
-        if not record["retired"] and modulus > 1 and exponent > 2:
-            return record, modulus, exponent
+        if modulus > 1 and exponent > 2:
+            return "", record, modulus, exponent
     except Exception:
-        pass
-    return {}, 0, 0
+        return "keycache unreadable", {}, 0, 0
+    return "key not registered", {}, 0, 0
 
 
 @allow_storage
@@ -350,17 +358,19 @@ class Attestation:
 class Contract(gl.Contract):
     owner_address: Address
     pending_owner_address: Address
-    registry_address: Address
+    router_address: Address
     treasury_address: Address
     pending_treasury_address: Address
     fee_wei: u256
     records: TreeMap[str, Attestation]
     record_count: u256
+    ids_of: TreeMap[str, DynArray[str]]
+    refusals: TreeMap[str, str]
 
-    def __init__(self, registry: str):
+    def __init__(self, router: str):
         self.owner_address = gl.message.sender_address
         self.pending_owner_address = ZERO_ADDRESS
-        self.registry_address = as_address(registry)
+        self.router_address = as_address(router)
         self.treasury_address = gl.message.sender_address
         self.pending_treasury_address = ZERO_ADDRESS
         self.fee_wei = u256(0)
@@ -370,27 +380,35 @@ class Contract(gl.Contract):
     def attest(self, headers_url: str, domain: str, selector: str) -> str:
         url = str(headers_url).strip()
         if not url.startswith("https://") or len(url) > MAX_URL:
-            return refuse("url not allowed")
+            return self._refuse("url not allowed")
         return self._attest(url, b"", domain, selector)
 
     @gl.public.write.payable
     def attest_inline(self, headers_blob: str, domain: str, selector: str) -> str:
         blob = str(headers_blob).encode("utf-8")
         if len(blob) > MAX_BLOB:
-            return refuse("blob too large")
+            return self._refuse("blob too large")
         return self._attest("", blob, domain, selector)
+
+    def _refuse(self, reason):
+        who = gl.message.sender_address
+        self.refusals[who.as_hex] = reason
+        paid = int(gl.message.value)
+        if paid:
+            _Recipient(who).emit_transfer(value=u256(paid))
+        return reason
 
     def _attest(self, url, blob, domain, selector):
         paid = int(gl.message.value)
         if paid < int(self.fee_wei):
-            return refuse("fee not paid")
+            return self._refuse("fee not paid")
         name = normalize(domain, MAX_DOMAIN)
         label = normalize(selector, MAX_LABEL)
         if not name or not label:
-            return refuse("bad domain or selector")
-        record, modulus, exponent = registry_key(self.registry_address, name, label)
-        if not modulus:
-            return refuse("key not registered")
+            return self._refuse("bad domain or selector")
+        why, record, modulus, exponent = cached_key(self.router_address, name, label)
+        if why:
+            return self._refuse(why)
         now = str(gl.message_raw["datetime"])
 
         def probe() -> str:
@@ -398,6 +416,8 @@ class Contract(gl.Contract):
 
         agreed = str(gl.eq_principle.strict_eq(probe) if url else probe())
         parts = (agreed.split("|") + [""] * 8)[:8]
+        if parts[4] == NO_L:
+            return self._refuse(NO_L)
 
         record_id = str(self.record_count)
         self.records[record_id] = Attestation(
@@ -414,6 +434,7 @@ class Contract(gl.Contract):
             fee_paid=u256(paid),
         )
         self.record_count = u256(int(self.record_count) + 1)
+        self.ids_of.get_or_insert_default(gl.message.sender_address.as_hex).append(record_id)
         return record_id
 
     @gl.public.view
@@ -433,6 +454,7 @@ class Contract(gl.Contract):
             "requester": held.requester.as_hex,
             "attested_at": str(held.attested_at),
             "fee_paid": str(held.fee_paid),
+            "schema_version": SCHEMA_VERSION,
         }
 
     @gl.public.view
@@ -451,6 +473,20 @@ class Contract(gl.Contract):
         )
 
     @gl.public.view
+    def records_of(self, requester: str) -> list:
+        try:
+            return list(self.ids_of.get(as_address(requester).as_hex, []))
+        except Exception:
+            return []
+
+    @gl.public.view
+    def last_refusal(self, requester: str) -> str:
+        try:
+            return self.refusals.get(as_address(requester).as_hex, "")
+        except Exception:
+            return ""
+
+    @gl.public.view
     def count(self) -> int:
         return int(self.record_count)
 
@@ -463,8 +499,8 @@ class Contract(gl.Contract):
         return self.treasury_address.as_hex
 
     @gl.public.view
-    def registry(self) -> str:
-        return self.registry_address.as_hex
+    def router(self) -> str:
+        return self.router_address.as_hex
 
     @gl.public.view
     def owner(self) -> str:

@@ -8,8 +8,25 @@ the body hash the signature claimed, how the body was canonicalized, a digest
 of the Message-ID, the From domain and whether it aligns with the signer, the
 key it was checked against, a verdict and a reason.
 
-It resolves keys through the [Registry](registry.md) and never reads DNS
-itself.
+It never reads DNS itself. v1.1, the deployed version, reads keys from the
+[Registry](registry.md) it was deployed with.
+
+This page describes **v1.2, which is built and not deployed**, and says where
+it differs from v1.1. v1.2 reads keys from the [KeyCache](keycache.md), which
+it finds through the [Router](router.md) on every call, so the KeyCache can be
+replaced without a new Verifier. What v1.2 adds over v1.1:
+
+- signatures carrying `l=` are refused, with a refund;
+- a key the KeyCache holds as `pending`, `rotated` or `retired` is refused,
+  with a refund and a reason per state; only an `active` key attests;
+- every record carries `schema_version`, `"2"`;
+- `records_of(requester)` and `last_refusal(requester)`, because the return
+  value of a write cannot be read from the chain;
+- the constructor argument is the Router address, and `registry()` is
+  replaced by `router()`.
+
+Everything else, the refund on every deterministic refusal included, is v1.1
+unchanged.
 
 ## What a record contains
 
@@ -20,8 +37,8 @@ itself.
 | `bh` | the body hash the signature committed to, base64, as published |
 | `body_canon` | the body canonicalization from the signature's `c=` tag |
 | `message_id_sha256` | SHA-256 of the Message-ID, hex, empty if there was none |
-| `key_bits` | the modulus size of the Registry's key |
-| `key_sha256` | SHA-256 of the DER the domain published, from the Registry |
+| `key_bits` | the modulus size of the key the KeyCache held (the Registry's on v1.1) |
+| `key_sha256` | SHA-256 of the DER the domain published, from the same record |
 | `valid` | true only if the header signature verified and every rule below passed |
 | `reason` | why, in a fixed phrase; see the list below |
 | `from_domain` | the domain part of the signed From address, lowercased; empty if it could not be read unambiguously |
@@ -37,6 +54,13 @@ was never written. `requester` comes back as a hex string. `count() -> int` is
 how many records exist; ids are sequential and are strings, starting at
 `"0"`, which is why the tools take them with the `str:` prefix that keeps a
 digit a string.
+
+On v1.2, `get` also returns `schema_version`, the string `"2"`. It is a
+constant of the contract rather than a stored field: every record a given
+Verifier writes has the same layout, so the value is the same for all of
+them and costs no storage. Records of v1 and v1.1 carry no such field and
+are schema 1. A reader that meets a `schema_version` it does not know should
+stop rather than guess what the fields mean.
 
 The From address itself is never stored, only its domain part.
 
@@ -87,8 +111,8 @@ the same condition that leaves `bh` empty.
 ## How a consumer reads a record
 
 From another contract, at the Verifier address stored together with the
-record id, never re-resolved through the Registry for a decision: ids start
-at `"0"` on every Verifier, and the Registry pointer can move. See rules 1
+record id, never re-resolved through the Registry or the Router for a
+decision: ids start at `"0"` on every Verifier, and either pointer can move. See rules 1
 and 4 in [interfaces.md](interfaces.md#5-rules-for-integrators).
 
 ```python
@@ -136,10 +160,35 @@ python3 tools/read.py <VERIFIER> check_for str:0 amazon.com 1024 0x<requester>
 python3 tools/read.py <VERIFIER> count
 ```
 
+## What a caller's calls did (v1.2)
+
+The return value of `attest` or `attest_inline`, a record id or a refusal
+reason, cannot be read from the chain after the fact
+([interfaces.md](interfaces.md), section 5, rule 15). v1.2 exposes both as
+views, keyed by the address that sent the call:
+
+- `records_of(requester) -> list` returns the ids of every record that
+  requester's calls wrote on this Verifier, oldest first, as strings.
+- `last_refusal(requester) -> str` returns the reason of that requester's
+  most recent refused call, or `""` if none was ever refused.
+
+Both parse `requester` as an address, so any spelling of it works, and a
+malformed one answers `[]` or `""` rather than raising.
+
+A client learns what its call did by reading both before sending and again
+at FINALIZED: a new id at the end of `records_of` is its record; otherwise a
+changed `last_refusal` is its refusal. A recorded call does not clear
+`last_refusal`, and the view holds only the latest reason, so two refusals
+in a row for the same reason read the same. A client that sends one call at
+a time, as rule 13 requires, and still sees neither change knows its call
+did not execute, or was refused for the same reason as the one before it;
+the transaction's own status tells those two apart.
+
 ## Removed views
 
 Three views were removed before the first deploy to keep the contract under
-the 17 000 byte source limit (see [Building](#building-checking-and-deploying)):
+the 17 000 byte source limit v1 and v1.1 were built to (see
+[Building](#building-checking-and-deploying)):
 
 - `latest_by_bh(bh)`, with its `bh_index` map. It returned the newest record
   for a body hash whatever its verdict, so its answer always had to go back
@@ -164,6 +213,21 @@ Only when none of them matches is the record stored with the reason
 from any signature: `bh`, `body_canon` and `from_domain` stay empty. The key
 comes from the call's arguments, so checking another domain's signature
 against it would only read as a bad signature.
+
+**`l=` is refused (v1.2).** If the selected signature carries an `l=` tag,
+the probe stops there with the reason `body length limit not supported`, and
+once the validators have agreed on it the call is refused: nothing is
+stored, the whole value is refunded, and the reason is returned and kept in
+`last_refusal`. An `l=` signature covers only a prefix of the body, and a
+record cannot say which prefix, so a consumer checking a body against `bh`
+could be shown a message with anything appended. `l=` on a signature that is
+not the selected one is ignored, like everything else about that signature.
+This is the one refusal that comes after the work rather than before it: on
+the `attest` path the validators have fetched the blob by then. It is
+refunded all the same, because it is decided on the agreed verdict, which
+is the same on every validator, and a caller cannot tell an `l=` signature
+from the outside before sending. On v1.1 `l=` is neither refused nor
+recorded.
 
 Every rule below makes a record `valid` false. The RSA check of the selected
 signature runs first; the rules then run in this order and the first one
@@ -234,22 +298,39 @@ reason. See [What attest returns](#what-attest-returns).
    and drops a trailing dot, and empties anything over 253 or 63 characters.
    An empty result either way, including an empty argument, is
    `bad domain or selector`.
-4. The Registry holds a key for that domain and selector and has not retired
-   it, or the answer is `key not registered`. The key is read from the
-   Registry's finalized state, so a newly registered key becomes usable only
-   once its `register_key` transaction is FINALIZED; an attestation sent
-   before that answers `key not registered` and can be sent again after.
+4. The key is usable. On v1.1 the Registry holds a key for that domain and
+   selector and has not retired it, or the answer is `key not registered`.
+   On v1.2 the Verifier reads `resolve("keycache")` from the Router and then
+   `key_status(domain, selector)` from the KeyCache it names, both at
+   `LATEST_FINAL`, and refuses unless the key is `active`:
+
+   | reason | what happened |
+   |--------|---------------|
+   | `router unreadable` | the Router read raised |
+   | `router resolves no keycache` | the Router has no current `keycache` |
+   | `keycache unreadable` | the KeyCache read raised, or the Router named something that is not an address, or the record could not be parsed |
+   | `key not registered` | the KeyCache holds no record, its modulus is not above 1 or its exponent not above 2, or its state is one the Verifier does not know |
+   | `key pending` | the key is still in quarantine |
+   | `key rotated` | DNS publishes a different key under the selector |
+   | `key retired` | the key was retired by refresh or by the KeyCache owner |
+
+   Either way the key is read from finalized state, so a newly registered
+   key, or on v1.2 a newly confirmed one, becomes usable only once that
+   transaction is FINALIZED; an attestation sent before that is refused and
+   can be sent again after.
 
 Past those four checks nothing reverts either. The fetch, the parse and
 the signature check all happen inside the non-deterministic block under
 `gl.eq_principle.strict_eq`, which runs the probe on every validator and
 compares the returned strings byte for byte, and every way that block can fail
-is a stored record with `valid` false and a reason:
+is a stored record with `valid` false and a reason, with one exception on
+v1.2: a selected signature carrying `l=` is refused and refunded instead of
+recorded (see [The verification rules](#the-verification-rules)).
 
 | reason | what happened |
 |--------|---------------|
 | `header signature verified` | the signature is good and every rule passed; this is the only `valid` true reason |
-| `RSA PKCS#1 v1.5 check failed` | the signature did not verify against the Registry's key |
+| `RSA PKCS#1 v1.5 check failed` | the signature did not verify against the key (the KeyCache's on v1.2, the Registry's on v1.1) |
 | `signature does not match domain or selector` | the blob is signed, but no signature in it is for the call's domain and selector |
 | `from not signed` | `h=` does not list From |
 | `duplicate signed header` | a signed header name occurs more often than `h=` lists it |
@@ -292,8 +373,10 @@ Its rejections, all of them refunds rather than reverts:
 
 1. The blob is over 16 384 bytes once encoded, which answers
    `blob too large`.
-2. `fee not paid`, `bad domain or selector` and `key not registered`, as for
+2. `fee not paid`, `bad domain or selector` and the key refusals, as for
    `attest`. There is no URL, so `url not allowed` cannot happen here.
+3. On v1.2, `body length limit not supported` for a selected signature
+   with `l=`.
 
 **The trade between the two methods.**
 
@@ -323,7 +406,10 @@ reasons, in the order they are checked:
 | `blob too large` | the blob was over 16 384 bytes once encoded | `attest_inline` |
 | `fee not paid` | `gl.message.value` was below `fee()` | both |
 | `bad domain or selector` | the domain was empty or over 253 characters, or the selector was empty or over 63 | both |
-| `key not registered` | the Registry holds no usable key for that domain and selector, or its owner retired it | both |
+| `key not registered` | v1.1: the Registry holds no usable key for that domain and selector, or its owner retired it. v1.2: the KeyCache holds no usable record | both |
+| `router unreadable`, `router resolves no keycache`, `keycache unreadable` | v1.2 only: the KeyCache could not be found or read, see [attest](#attest) | both |
+| `key pending`, `key rotated`, `key retired` | v1.2 only: the KeyCache holds the key in that state | both |
+| `body length limit not supported` | v1.2 only: the selected signature carries `l=`; checked after the work, on the agreed verdict | both |
 
 **No call to `attest` or `attest_inline` can keep the sender's value without
 creating a record.** Either the call writes a record, in which case the whole
@@ -334,8 +420,13 @@ stays in the contract with nothing written for it.
 
 A record with `valid` false is still a record. A failed fetch, a broken
 signature or a rule the message did not pass are all verdicts the validators
-did the work to reach, so they are stored and the fee is kept. Only the five
-checks above, which happen before any work, give the value back.
+did the work to reach, so they are stored and the fee is kept. Only the
+refusals above give the value back. All of them but `l=` happen before any
+work; `l=` is refused after it, on the verdict the validators agreed on.
+
+On v1.2 every refusal also sets `last_refusal(sender)`, and every record
+appends its id to `records_of(sender)`, so both outcomes can be read after
+the fact; see [What a caller's calls did](#what-a-callers-calls-did-v12).
 
 A caller tells the two apart with `str.isdigit()` on the return value, or by
 comparing against the reasons it cares about.
@@ -462,14 +553,20 @@ the fee and decides payouts, so a mistyped address has to be survivable.
 python3 contracts/verifier/build.py          # splices lacre/dkimcore.py in
 python3 -m pytest -q                         # the copy and the built file
 python3 tests/verifier_stub_run.py           # the whole contract, SDK stubbed
-genvm-lint contracts/verifier/verifier.py
+genvm-lint check contracts/verifier/verifier.py
 export PROBE_PK=0x<64 hex chars>
-python3 tools/deploy.py contracts/verifier/verifier.py 0x<registry> --estimate-only
+python3 tools/deploy.py contracts/verifier/verifier.py 0x<router> --estimate-only
 ```
 
+`contracts/verifier/verifier.py` is now the v1.2 build. The v1.1 source that
+is deployed is that file as of commit `a56f1c9`, which is what
+`deployments.json` records and `tools/verify_deploy.py verifier` compares the
+chain against. `genvm-lint` reports `E105` on the validate half for the
+reason given in [docs/router.md](router.md#building-checking-and-deploying).
+
 The build splices only the part of `lacre/dkimcore.py` the contract reaches.
-The Verifier takes its key from the Registry, so the DER and DoH half of that
-file is dead code here. `tests/test_dkimcore.py` holds `lacre/dkimcore.py`
+The Verifier takes its key from the KeyCache, the Registry on v1.1, so the
+DER and DoH half of that file is dead code here. `tests/test_dkimcore.py` holds `lacre/dkimcore.py`
 byte for byte to the probe's verifier, and the same test rebuilds the
 contract and fails if the committed file is stale.
 
@@ -482,11 +579,34 @@ fit in a one-line comment is in [Design notes](#design-notes) below. Read the
 template, not `verifier.py`.
 
 `build.py --check` verifies the built file without writing it, and prints the
-size and the headroom under the 17 000 byte limit either way. At about 870
-gas per byte that limit is about 14.8 M gas, 88 percent of the 2^24
-transaction cap.
+size, the headroom under the build cap and the estimated deploy gas either
+way. v1 and v1.1 were built to a 17 000 byte cap. v1.2 raises it to 18 500
+rather than cut tested code: the v1.2 build is 18 289 bytes, which at the
+870 gas per byte the builds estimate with is 15 911 430 gas, 94.8 percent of
+the 2^24 transaction cap. The cap itself, 18 500 bytes, would be 16 095 000
+gas, 95.9 percent, so by that rule the byte cap is no longer the binding
+limit: 95 percent of 2^24 is reached at 18 320 bytes, 31 bytes above the
+current build. v1.1 used 13.21 M gas for 16 912 bytes on Bradbury, about 781 gas
+per byte.
 
-The deploy takes the Registry address as its constructor argument, the
+The node's own estimate for this build (`tools/deploy.py --estimate-only`
+with the Router argument `0x...dEaD`, 2026-09-26, source SHA-256
+`dfc1c100...20189b48`, `lacre/dkimcore.py` at `834bbcdb...72301b92`,
+18 597 bytes of calldata) is 15 341 609 gas, 91.4 percent of 2^24, below
+the 95 percent line, so nothing is cut. That estimate, not the 870 rule, is
+the figure to go by: it is computed from the exact calldata the deploy
+sends, and it is the number `tools/deploy.py` signs from. At 91.4 percent,
+the deploy's three-times margin does not apply. Three times the estimate is
+clamped to 2^24, 16 777 216, which is 1.094 times the estimate, 1 435 607
+gas of headroom. The deploy has to go out from the same source that was
+estimated, after a fresh `--estimate-only` run on the same network, and
+there is no retry with more gas: 2^24 is the ceiling. v1 used 13.24 M of
+a 14.3 M estimate, 93 percent, so the headroom is expected to hold. If it
+does not, or a fresh estimate reaches 95 percent, `last_refusal` is the
+first candidate to drop: its view, its storage map and the line that writes
+it are 279 bytes of the build, about 243 000 gas at 870 per byte.
+
+The v1.1 deploy took the Registry address as its constructor argument, the
 Registry v1 address from deployments.json:
 
 ```bash
@@ -499,6 +619,21 @@ The Registry pointer is what makes the address findable, so `set_version` is
 part of the deploy rather than a later step. A contract cannot be read until
 it is FINALIZED, so the first read after a deploy can fail and say nothing
 about the deploy itself.
+
+v1.2, when it is deployed, takes the Router address instead. On a Router
+where `verifier` has never resolved, `set_version` takes effect at once; on
+one where it already resolves, the change waits the Router's 48 hours:
+
+```bash
+python3 tools/deploy.py contracts/verifier/verifier.py <ROUTER>
+python3 tools/call.py <ROUTER> set_version verifier 1.2 0x<verifier address>
+python3 tools/call.py <ROUTER> apply_version verifier      # only if it was a change, 48 hours later
+```
+
+Until the Router resolves `keycache`, every call is refused with
+`router resolves no keycache` and refunded. `tools/attest.py` is written for
+v1.1: it reads `registry()` and the Registry's `get_key` to derive a refusal
+and scans records to find its own, and has not been changed for v1.2.
 
 ## Deployments
 
@@ -513,6 +648,8 @@ and exercised on 23 September 2026 from the owner wallet
 |---------|---------|---------------------|------------|--------|--------|
 | v1.1 | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 13.21 M used, 0.028 GEN, AGREE | 16 912 bytes | live, `version("verifier")` points here |
 | v1 | `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a` | `0x7b214b0f273c5c1b4135a7ed482cbab9b521c373ac88da3e57ba63f2d43132bc` | 13.24 M used of 14.3 M estimated, 0.028 GEN, AGREE | 16 954 bytes | retired by `set_version` |
+
+v1.2 is built and tested and has not been deployed anywhere.
 
 ### v1.1
 
@@ -626,28 +763,52 @@ few comments, and the deployed file none. The reasoning behind it lives here.
   Unicode digit that `str.isdigit` accepts and `int` refuses returns 0
   instead of raising. `signed_at` is 0 for a `t=` of 20 or more digits, so it
   always fits a u256.
-- **registry_key.** A key the Registry does not hold, or one its owner
-  retired, is refused before anything is fetched rather than fetched and
-  judged. It reads with `view(state=StorageType.LATEST_FINAL)`, imported
-  from `genlayer.py.public_abi` because `from genlayer import *` does not
-  export it: a key registration still open to appeal is not trusted, and
-  the read is the same on every validator. `key_bits` and `key_sha256` on the record describe the key checked
-  against, so they come from the Registry and never from the blob.
+- **cached_key (v1.2; registry_key on v1.1).** A key that is not held, or
+  not active, is refused before anything is fetched rather than fetched and
+  judged. Both reads, the Router's `resolve("keycache")` and the KeyCache's
+  `key_status`, use `view(state=StorageType.LATEST_FINAL)`, imported from
+  `genlayer.py.public_abi` because `from genlayer import *` does not export
+  it: a key registration or a Router change still open to appeal is not
+  trusted, and the read is the same on every validator. `key_bits` and
+  `key_sha256` on the record describe the key checked against, so they come
+  from the KeyCache and never from the blob. Only the three states the
+  KeyCache defines produce a `key <state>` reason; anything else a KeyCache
+  answers is `key not registered`, so a KeyCache cannot put arbitrary text in
+  a refusal.
+- **The KeyCache is resolved on every call.** Holding its address from the
+  constructor would tie a Verifier to one KeyCache for life, as v1.1 is tied
+  to one Registry. Resolving it through the Router costs one more
+  cross-contract view per call, and lets a new KeyCache take over behind the
+  Router's 48 hour delay without a new Verifier.
 - **Neither attest method reverts.** Every deterministic rejection they have
-  happens before the first fetch or parse, and every one of them refunds and
-  returns a reason instead of raising, because a revert would keep the value.
-  `refuse()` is the single place that does it, so a rejection added later
-  cannot quietly skip the refund. Past those checks the caller has bought the
-  work, whatever the verdict.
+  refunds and returns a reason instead of raising, because a revert would
+  keep the value. `_refuse()` is the single place that does it, and it also
+  records the reason for `last_refusal`, so a rejection added later cannot
+  quietly skip the refund or the view. All of them but `l=` happen before
+  the first fetch or parse; past those checks the caller has bought the
+  work, whatever the verdict, unless the signature carries `l=`.
+- **l= after the work.** The tag is only visible inside the blob, which on
+  the `attest` path exists only inside the non-deterministic block. The
+  probe returns the refusal reason as its verdict, the validators agree on
+  it like any other, and the deterministic half refuses on the agreed
+  string. A refusal decided that way is the same on every validator.
+- **schema_version is a constant, not a field.** Every record on one
+  Verifier has the same layout, so storing the version per record would
+  cost storage and say nothing more. `get` returns it with each record.
+- **records_of and last_refusal.** Both are keyed by the requester's
+  `as_hex`, the spelling `Address` produces, so the key is the same however
+  the caller spelled its address. `records_of` is a `DynArray` per
+  requester, appended once per record, so reading it never scans the whole
+  record map.
 - **Raises that are left.** `set_fee`, `propose_owner`, `accept_owner`,
   `propose_treasury`, `accept_treasury` and `withdraw` still raise, and so
   does the constructor. None of them is payable, so none can be holding a
   sender's value when it raises. `check_for` parses an address and catches
   its own failure, and it is a view.
-- **registry_key answers, it does not raise.** The cross-contract read is
-  inside its `try` along with the parsing, so a Registry that is missing,
-  reverting or returning something unexpected is a refused call with a
-  refund rather than a revert holding the value.
+- **cached_key answers, it does not raise.** Each cross-contract read is
+  inside a `try` along with the parsing, so a Router or a KeyCache that is
+  missing, reverting or returning something unexpected is a refused call
+  with a refund rather than a revert holding the value.
 - **Consensus.** `strict_eq` compares the probe's return values byte for
   byte, so consensus rides on the canonical string and never on the fetched
   bytes. `scrub()` keeps `|` out of every field, so the split yields a fixed

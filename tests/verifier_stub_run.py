@@ -3,8 +3,8 @@
 
 The built contract is executed as written, with a stand-in for the parts of
 the runner it touches: storage maps, gl.message and its value, the balance,
-the equivalence principle, the web fetch, the cross-contract view on the
-Registry and the external message path. Nothing is deployed, no gas is spent
+the equivalence principle, the web fetch, the cross-contract views on the
+Router and the KeyCache, and the external message path. Nothing is deployed, no gas is spent
 and no value moves, so the whole state machine, including the paths a testnet
 run would need a second sender or a tampered blob to reach, is exercised in
 under a second.
@@ -53,7 +53,7 @@ DOH_URL = "https://dns.google/resolve?name=%s._domainkey.%s&type=TXT"
 BLOB_URL = "https://lacre.in-sidr.xyz/stub-run.txt"
 
 # A second registered selector, so that a blob presented under the wrong
-# domain gets past the Registry and is refused by the signature instead.
+# domain gets past the KeyCache and is refused by the signature instead.
 OTHER_DOMAIN = "example.com"
 OTHER_SELECTOR = "sel"
 
@@ -63,7 +63,9 @@ SIGNER_SUB = "mail.lacre.test"
 SIGNER_SELECTOR = "stub"
 SIGNER_T = "1790000000"
 
-REGISTRY = "0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e"
+ROUTER = "0x7777777777777777777777777777777777777777"
+KEYCACHE = "0x8888888888888888888888888888888888888888"
+KEYCACHE_B = "0x9999999999999999999999999999999999999999"
 OWNER = "0x1111111111111111111111111111111111111111"
 STRANGER = "0x2222222222222222222222222222222222222222"
 TREASURY = "0x3333333333333333333333333333333333333333"
@@ -73,6 +75,8 @@ ZERO = "0x0000000000000000000000000000000000000000"
 
 GEN = 10 ** 18
 FEE = GEN // 1000
+
+NO_L = "body length limit not supported"
 
 # Whatever the runner puts in gl.message_raw["datetime"] is stored unmodified,
 # so the harness supplies a string and expects exactly it back.
@@ -122,6 +126,10 @@ class StorageType(enum.IntEnum):
 class TreeMap(dict):
     """Storage map. dict answers get, items, len and "in" the same way."""
 
+    def get_or_insert_default(self, key):
+        # The one map that uses it holds DynArray[str], whose default is empty.
+        return self.setdefault(key, [])
+
 
 class UserError(Exception):
     pass
@@ -148,47 +156,71 @@ class Message:
         return self._node.value
 
 
-class Registry:
-    """The Registry as the Verifier sees it: one view, one method.
+class KeyCache:
+    """The KeyCache as the Verifier sees it: one view, one method.
 
-    gl.get_contract_at(addr).view().get_key(...) returns the record as
-    calldata decodes it, which is a plain dict of strings and one bool.
+    gl.get_contract_at(addr).view().key_status(...) returns the record as
+    calldata decodes it, a plain dict of strings, or {} for an unknown key.
     """
 
     def __init__(self):
         self.records = {}
         self.calls = []
         self.states = []
+        self.broken = False
 
-    def add(self, domain, selector, key, retired=False):
+    def add(self, domain, selector, key, state="active"):
         self.records[(domain, selector)] = {
             "domain": domain,
             "selector": selector,
+            "state": state,
             "n_hex": "%x" % (key["n"],),
             "e": str(key["e"]),
             "key_bits": str(key["key_bits"]),
             "key_sha256": key["sha256"],
             "first_seen": DATETIME,
-            "retired": retired,
+            "activated_at": DATETIME if state != "pending" else "",
+            "refreshed_at": "",
         }
 
     def view(self, *, state=StorageType.LATEST_NON_FINAL):
         self.states.append(state)
         return self
 
-    def get_key(self, domain, selector):
+    def key_status(self, domain, selector):
         self.calls.append((domain, selector))
+        if self.broken:
+            raise RuntimeError("the KeyCache reverted")
         return dict(self.records.get((domain, selector), {}))
+
+
+class Router:
+    """The Router as the Verifier sees it: resolve() and nothing else."""
+
+    def __init__(self, names):
+        self.names = dict(names)
+        self.states = []
+        self.broken = False
+
+    def view(self, *, state=StorageType.LATEST_NON_FINAL):
+        self.states.append(state)
+        return self
+
+    def resolve(self, name):
+        if self.broken:
+            raise RuntimeError("the Router reverted")
+        return self.names.get(name, "")
 
 
 class Node:
     """The chain's side: who is calling, with what, and what is served."""
 
-    def __init__(self, registry):
+    def __init__(self, router, caches):
         self.sender = Address(OWNER)
         self.value = 0
         self.balance = 0
-        self.registry = registry
+        self.router = router
+        self.caches = caches
         self.blob = b""
         self.status = 200
         self.urls = []
@@ -211,9 +243,12 @@ class Node:
         """gl.get_contract_at: the internal, contract to contract path."""
         if not isinstance(address, Address):
             raise TypeError("address expected")
-        if address != Address(REGISTRY):
-            raise AssertionError("the contract reached an address it should not")
-        return self.registry
+        if address == Address(ROUTER):
+            return self.router
+        for cache, stub in self.caches.items():
+            if address == Address(cache):
+                return stub
+        raise AssertionError("the contract reached an address it should not")
 
     def evm_interface(self, declaration):
         """gl.evm.contract_interface: the external path, through the ghost.
@@ -263,11 +298,12 @@ def build_sdk(node):
     )
 
     sdk = types.ModuleType("genlayer")
-    sdk.__all__ = ["gl", "u256", "Address", "TreeMap", "allow_storage"]
+    sdk.__all__ = ["gl", "u256", "Address", "TreeMap", "DynArray", "allow_storage"]
     sdk.gl = gl
     sdk.u256 = int
     sdk.Address = Address
     sdk.TreeMap = TreeMap
+    sdk.DynArray = list
     sdk.allow_storage = lambda cls: cls
     return sdk
 
@@ -287,7 +323,7 @@ def load_contract(node):
     for name, annotation in module.Contract.__annotations__.items():
         if getattr(annotation, "__origin__", annotation) is TreeMap:
             setattr(contract, name, TreeMap())
-    contract.__init__(REGISTRY)
+    contract.__init__(ROUTER)
     return contract
 
 
@@ -408,13 +444,15 @@ def main():
     blob = build_blob()
     key = fetch_key(DOMAIN, SELECTOR)
     signer = generate_key()
-    registry = Registry()
-    registry.add(DOMAIN, SELECTOR, key)
-    registry.add(OTHER_DOMAIN, OTHER_SELECTOR, key)
-    registry.add(SIGNER, SIGNER_SELECTOR, signer)
-    registry.add(SIGNER_SUB, SIGNER_SELECTOR, signer)
+    cache = KeyCache()
+    cache.add(DOMAIN, SELECTOR, key)
+    cache.add(OTHER_DOMAIN, OTHER_SELECTOR, key)
+    cache.add(SIGNER, SIGNER_SELECTOR, signer)
+    cache.add(SIGNER_SUB, SIGNER_SELECTOR, signer)
+    router = Router({"keycache": KEYCACHE})
+    other_cache = KeyCache()
 
-    node = Node(registry)
+    node = Node(router, {KEYCACHE: cache, KEYCACHE_B: other_cache})
     node.blob = blob
     contract = load_contract(node)
 
@@ -440,7 +478,8 @@ def main():
             stored, queued = contract.count(), len(node.external)
             answer = send(wei)
             report.check("%s%s" % (label, "" if wei else ", carrying nothing"),
-                         answer == reason, answer)
+                         answer == reason and contract.last_refusal(STRANGER) == reason,
+                         answer)
             report.check("  refunds %s and stores nothing"
                          % ("the %d wei whole" % (wei,) if wei else "nothing",),
                          node.external[queued:] == ([(STRANGER, {"value": wei})]
@@ -448,14 +487,17 @@ def main():
                          and contract.count() == stored,
                          str(node.external[queued:]))
     report.check("owner() is the deployer", contract.owner() == OWNER, contract.owner())
-    report.check("registry() is the constructor argument",
-                 contract.registry() == REGISTRY.lower(), contract.registry())
+    report.check("router() is the constructor argument",
+                 contract.router() == ROUTER.lower(), contract.router())
     report.check("treasury() starts as the owner", contract.treasury() == OWNER)
     report.check("fee() starts at zero and nothing is stored",
                  contract.fee() == 0 and contract.count() == 0)
     report.check("the removed methods are gone",
                  not any(hasattr(contract, name) for name in (
-                     "check", "latest_by_bh", "fees_collected", "set_treasury")))
+                     "check", "latest_by_bh", "fees_collected", "set_treasury",
+                     "registry")))
+    report.check("records_of and last_refusal start empty",
+                 contract.records_of(STRANGER) == [] and contract.last_refusal(STRANGER) == "")
 
     # The happy path, free, the way the contract is deployed.
     first = attest(contract, node, STRANGER, 0, BLOB_URL, DOMAIN.upper(), SELECTOR)
@@ -487,12 +529,23 @@ def main():
                  record.get("attested_at") == DATETIME)
     report.check("fee_paid is what rode on the call",
                  record.get("fee_paid") == "0")
+    report.check("the record carries the schema version",
+                 record.get("schema_version") == "2", str(record.get("schema_version")))
+    report.check("records_of lists it for its requester",
+                 contract.records_of(STRANGER) == ["0"] and contract.records_of(OWNER) == [],
+                 str(contract.records_of(STRANGER)))
+    report.check("records_of reads any spelling of the address",
+                 contract.records_of("0x" + STRANGER[2:].upper()) == ["0"])
+    report.check("records_of of a malformed address is empty",
+                 contract.records_of("not an address") == [])
     report.check("the contract fetched the URL it was given",
                  set(node.urls) == {BLOB_URL}, "%d fetches" % (len(node.urls),))
-    report.check("it read the key from the Registry, not from DNS",
-                 registry.calls == [(DOMAIN, SELECTOR)], str(registry.calls))
-    report.check("from finalized Registry state",
-                 registry.states == [StorageType.LATEST_FINAL], str(registry.states))
+    report.check("it found the KeyCache through the Router",
+                 router.states == [StorageType.LATEST_FINAL], str(router.states))
+    report.check("and read the key from it, not from DNS",
+                 cache.calls == [(DOMAIN, SELECTOR)], str(cache.calls))
+    report.check("from finalized KeyCache state",
+                 cache.states == [StorageType.LATEST_FINAL], str(cache.states))
     report.check("count() is one", contract.count() == 1)
 
     report.check("check_for() accepts the record for its requester",
@@ -726,20 +779,92 @@ def main():
     report.check("and the run stored only the inline record",
                  contract.count() == stored + 1)
 
-    # A key the Registry does not hold, and one it retired.
+    # A key the KeyCache does not hold, and one in each state that is not
+    # active: each is refused with its own reason.
     fetches = len(node.urls)
     refused("an unregistered key is refused", "key not registered",
             lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL,
                                "notregistered.example", SELECTOR))
-    registry.add(OTHER_DOMAIN, OTHER_SELECTOR, key, retired=True)
-    refused("a retired key is refused", "key not registered",
+    for state in ("pending", "rotated", "retired"):
+        cache.add(OTHER_DOMAIN, OTHER_SELECTOR, key, state=state)
+        refused("a %s key is refused" % (state,), "key " + state,
+                lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL,
+                                   OTHER_DOMAIN, OTHER_SELECTOR))
+    cache.add(OTHER_DOMAIN, OTHER_SELECTOR, key, state="unheard of")
+    refused("a state the Verifier does not know is not registered", "key not registered",
             lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL,
                                OTHER_DOMAIN, OTHER_SELECTOR))
+    cache.add(OTHER_DOMAIN, OTHER_SELECTOR, key)
     report.check("and none of them fetched anything", len(node.urls) == fetches)
+
+    # The Router and the KeyCache are read on every call, and any failure to
+    # read them is a refusal with a refund, never a revert.
+    router.names = {}
+    refused("a Router that resolves no keycache is refused", "router resolves no keycache",
+            lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL, DOMAIN, SELECTOR))
+    router.names = {"keycache": KEYCACHE}
+    router.broken = True
+    refused("a Router that cannot be read is refused", "router unreadable",
+            lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL, DOMAIN, SELECTOR))
+    router.broken = False
+    cache.broken = True
+    refused("a KeyCache that cannot be read is refused", "keycache unreadable",
+            lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL, DOMAIN, SELECTOR))
+    cache.broken = False
+    router.names = {"keycache": "not an address"}
+    refused("a Router naming something that is not an address is refused",
+            "keycache unreadable",
+            lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL, DOMAIN, SELECTOR))
+    report.check("and none of them fetched anything", len(node.urls) == fetches)
+
+    # The KeyCache moves behind the Router with no new Verifier: the next
+    # call reads the new one, which does not hold this key yet.
+    router.names = {"keycache": KEYCACHE_B}
+    refused("after the Router moves, the new KeyCache is read", "key not registered",
+            lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL, DOMAIN, SELECTOR))
+    other_cache.add(DOMAIN, SELECTOR, key)
+    moved = attest(contract, node, STRANGER, 0, BLOB_URL, DOMAIN, SELECTOR)
+    report.check("and a key registered there attests",
+                 contract.get(moved).get("valid") is True
+                 and other_cache.calls[-1] == (DOMAIN, SELECTOR), moved)
+    router.names = {"keycache": KEYCACHE}
+
+    # l= is refused with a refund, on the agreed verdict, by URL and inline.
+    stored, queued = contract.count(), len(node.external)
+    limited = sign(signer, base, signed_names, " t=%s; l=0;" % (SIGNER_T,))
+    report.check("the l= blob verifies as RSA", verifies(signer, limited))
+    node.blob = limited
+    refused("a signature with l= is refused", NO_L,
+            lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL,
+                               SIGNER, SIGNER_SELECTOR))
+    node.blob = blob
+    refused("a signature with l= is refused inline too", NO_L,
+            lambda wei: call(node, STRANGER, wei, contract.attest_inline,
+                             limited.decode("ascii"), SIGNER, SIGNER_SELECTOR))
+    report.check("the URL path fetched before refusing",
+                 len(node.urls) > fetches, "%d fetches" % (len(node.urls) - fetches,))
+    report.check("no l= record was written", contract.count() == stored)
+    decoy_l = sign(signer, base, signed_names, " l=0;", "decoy.example").split(b"\r\n", 1)[0]
+    rsa, record = run("l on another signature", base, above=decoy_l + b"\r\n")
+    report.check("l= on a signature that is not the selected one is ignored",
+                 rsa and record.get("valid") is True, record.get("reason"))
+
+    # last_refusal is per requester and keeps the last refusal only; a
+    # recorded call does not clear it.
+    report.check("last_refusal keeps the latest reason", contract.last_refusal(STRANGER) == NO_L)
+    report.check("and is empty for a requester never refused",
+                 contract.last_refusal(AGENT) == ""
+                 and contract.last_refusal("not an address") == "")
+    report.check("records_of lists every id the requester wrote, in order",
+                 contract.records_of(STRANGER)
+                 == [str(i) for i in range(contract.count()) if i != int(inline)],
+                 "%d ids" % (len(contract.records_of(STRANGER)),))
+    report.check("and the inline one under its own requester",
+                 contract.records_of(AGENT) == [inline])
 
     # normalize() empties a name it cannot use, and an empty name is not a
     # lookup worth making, so these are refused before the Registry is read.
-    reads = len(registry.states)
+    reads, fetches = len(router.states), len(node.urls)
     refused("a domain over 253 characters is refused", "bad domain or selector",
             lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL,
                                "a" * 254, SELECTOR))
@@ -749,14 +874,15 @@ def main():
     refused("an empty domain is refused", "bad domain or selector",
             lambda wei: attest(contract, node, STRANGER, wei, BLOB_URL,
                                "   ", SELECTOR))
-    report.check("and none of them read the Registry or fetched anything",
-                 len(registry.states) == reads and len(node.urls) == fetches)
-    report.check("a domain of exactly 253 characters still reaches the Registry",
+    report.check("and none of them read the Router or fetched anything",
+                 len(router.states) == reads and len(node.urls) == fetches)
+    report.check("a domain of exactly 253 characters still reaches the KeyCache",
                  attest(contract, node, STRANGER, 0, BLOB_URL, "a" * 253,
                         SELECTOR) == "key not registered")
-    report.check("every Registry read asked for finalized state",
-                 set(registry.states) == {StorageType.LATEST_FINAL},
-                 "%d reads" % (len(registry.states),))
+    report.check("every Router and KeyCache read asked for finalized state",
+                 set(router.states + cache.states + other_cache.states)
+                 == {StorageType.LATEST_FINAL},
+                 "%d reads" % (len(router.states + cache.states + other_cache.states),))
 
     # The fee.
     node.sender = Address(STRANGER)
@@ -767,10 +893,10 @@ def main():
     report.check("fee() reports it", contract.fee() == FEE)
 
     stored, queued = contract.count(), len(node.external)
-    fetched, reads = len(node.urls), len(registry.states)
+    fetched, reads = len(node.urls), len(router.states)
     short = attest(contract, node, STRANGER, FEE - 1, BLOB_URL, DOMAIN, SELECTOR)
     report.check("attest under the fee answers instead of reverting",
-                 short == "fee not paid", short)
+                 short == "fee not paid" and contract.last_refusal(STRANGER) == short, short)
     report.check("the whole underpayment is queued back to the sender",
                  node.external[queued:] == [(STRANGER, {"value": FEE - 1})],
                  str(node.external[queued:]))
@@ -782,8 +908,8 @@ def main():
                  node.external[queued:] == [(STRANGER, {"value": FEE - 1})] * 2,
                  "%d queued" % (len(node.external) - queued,))
     report.check("neither one stored a record", contract.count() == stored)
-    report.check("and neither one read the Registry or fetched the blob",
-                 len(registry.states) == reads and len(node.urls) == fetched)
+    report.check("and neither one read the Router or fetched the blob",
+                 len(router.states) == reads and len(node.urls) == fetched)
     short = call(node, STRANGER, 0, contract.attest_inline,
                  blob.decode("ascii"), DOMAIN, SELECTOR)
     report.check("a call carrying nothing is refused with nothing to refund",

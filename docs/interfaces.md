@@ -4,6 +4,8 @@ This is the interface specification of every Lacre layer, written from the
 code that is deployed on Testnet Bradbury. Where it and another document
 disagree, this one follows the code. Sections 1 to 7 describe what is
 deployed. Section 8 describes what is planned and is a proposal only.
+Section 9 describes the next generation of contracts, which is built and
+tested in this repository and not deployed.
 
 The key words MUST, MUST NOT, SHOULD and SHOULD NOT in section 5 are to be
 read as described in RFC 2119.
@@ -19,6 +21,9 @@ consumer to talk to another one.
 | Registry | deployed, v1 | Which contract is the current Verifier, which contracts have held that name, and what RSA key a domain published under a selector. It is a key cache and a version router. |
 | Verifier | deployed, v1.1 | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
 | Extractors | planned, see section 8 | What a signed body says. They will answer "what does it say". |
+
+The next generation splits the Registry into a Router and a KeyCache and
+adds Verifier v1.2. None of it is deployed; see section 9.
 
 Which layer a consumer needs:
 
@@ -551,8 +556,8 @@ of the following were true when the record was written:
     `requester`, `domain`, `selector`, `source` and `fee_paid` match the
     call, and, when there is none, by deriving the refusal reason from
     running the Verifier's own checks read-only, in the Verifier's order.
-    The planned Verifier v1.2 adds `records_of(requester)` and
-    `last_refusal(requester)` for this (section 8).
+    Verifier v1.2, built and not deployed, adds `records_of(requester)` and
+    `last_refusal(requester)` for this (section 9).
 
 ## 6. Evidence and verdict
 
@@ -603,7 +608,7 @@ Bradbury on 24 September 2026, measured the design it will use:
 
 - **`l=` signatures.** Not rejected and not recorded (section 4.7). A
   consumer checking a body against `bh` cannot tell that the signature
-  covered only part of it.
+  covered only part of it. Verifier v1.2 refuses them (section 9).
 - **Prompt injection against a model-reading lane.** Measured in
   [experiments/llm-probe](../experiments/llm-probe/README.md): a body that
   closed the prompt's delimiter early and planted its own instructions
@@ -617,7 +622,9 @@ Bradbury on 24 September 2026, measured the design it will use:
   it delays acceptance.
 - **The admin key and set_version.** One owner key controls the Registry
   pointer, with immediate effect and no delay (section 3.4), and can retire
-  any key. The same key sets the Verifier fee and withdraws its balance.
+  any key. The same key sets the Verifier fee and withdraws its balance. The
+  Router puts a 48 hour delay on every change to a name that already
+  resolves (section 9).
 - **Public calldata on the inline path.** Every header in the blob is public
   permanently. The URL path puts the URL in public calldata as well.
 - **No body verification in any deployed layer.** Section 4.7.
@@ -629,8 +636,9 @@ Bradbury on 24 September 2026, measured the design it will use:
   attacker's key is recorded. A later `refresh_key` that sees the real key
   again only sets `rotated`, and the Verifier ignores `rotated`, so the
   attacker's key keeps producing valid records until the owner calls
-  `retire_key`. Two proposals in section 8 address this: the registration
-  quarantine in Registry v2 and refusing rotated keys in Verifier v1.2.
+  `retire_key`. Both remedies are built and not deployed (section 9): the
+  registration quarantine in the KeyCache and refusing rotated keys in
+  Verifier v1.2.
 - **Alignment in the parent direction.** `aligned` is true when the signing
   domain ends with `.` followed by `from_domain`, and no public suffix list
   is applied. A message with `From: x@co.uk` signed with `d=anything.co.uk`
@@ -649,7 +657,8 @@ Bradbury on 24 September 2026, measured the design it will use:
   with non-ASCII bytes the digest is not the SHA-256 of the raw bytes, and an
   off-chain recomputation has to do the same.
 - **One Verifier per Registry, fixed.** A Verifier reads keys from the
-  Registry it was deployed with, for its whole life.
+  Registry it was deployed with, for its whole life. Verifier v1.2 resolves
+  its KeyCache through the Router on every call instead (section 9).
 - **Inline blobs are text.** `attest_inline` encodes its argument as UTF-8,
   so headers with raw 8-bit bytes cannot be carried inline without breaking
   the signature. They have to go through `attest`.
@@ -673,39 +682,16 @@ Bradbury on 24 September 2026, measured the design it will use:
 
 ## 8. Planned, not deployed
 
-Every item in this section is a proposal, except the last one, deploy
-provenance, which is tooling and is in place. None of it is deployed, and all
-of the proposals are subject to change.
+Every item in this section is a proposal, except the first, which points to
+section 9, and the last one, deploy provenance, which is tooling and is in
+place. None of it is deployed, and all of the proposals are subject to
+change.
 
-- **Registry v2 (proposal).**
-  - Pinned versions: a consumer can call a specific Verifier version by a
-    stable reference, unaffected by any later `set_version`.
-  - A mandatory delay before a `set_version` takes effect. The pending change
-    is announced on chain when it is proposed, so consumers can see it
-    coming and react before it applies.
-  - Registration quarantine. `register_key` stores a new key as pending,
-    not usable by the Verifier. After a fixed delay, proposed as 24 hours
-    and measured with the runner datetime against `first_seen`, anyone can
-    call a confirmation that re-reads both resolvers. The key becomes active
-    only if the same DER is still published, and is discarded otherwise.
-    Rationale: a DNS takeover then has to fool both resolvers for the whole
-    delay, not for one read. Cost: a new selector can be used only after the
-    delay.
-- **Verifier v1.2 (proposal).**
-  - Reject signatures that carry `l=`, with a refund like every other
-    rejection.
-  - A schema version field in every record.
-  - Refuse keys marked `rotated` in the Registry, with a refund, the same
-    way retired keys are refused. Rationale: reusing a selector for a new
-    key goes against recommended DKIM practice, so legitimate old mail lost
-    this way should be rare, and a suspicious key stops working as soon as
-    anyone calls `refresh_key`. Cost: mail signed with the previous key
-    under a reused selector can no longer be attested.
-  - `records_of(requester)`, the ids of the records a requester's calls
-    wrote, and `last_refusal(requester)`, the reason of that requester's
-    last refused call. Rationale: the return value of a write cannot be
-    read from the chain (section 5, rule 15), so every outcome needs a
-    view.
+- **Registry v2 and Verifier v1.2.** The proposals listed here until
+  2026-09-26 (pinned versions, a delay before a version change, the
+  registration quarantine, refusing `l=` and rotated keys, a schema version,
+  `records_of` and `last_refusal`) are built, as a Router, a KeyCache and
+  Verifier v1.2, and are described in section 9. None of it is deployed.
 - **Pre-paid balances: not planned for Bradbury.** The per-call value model
   is kept, because the protocol already refunds the value of calls that do
   not execute (section 5, rule 12). Pre-paid balances are a study item for
@@ -746,7 +732,115 @@ of the proposals are subject to change.
   the SHA-256 of its deployed source, as `verifier_v1`, with the commit
   unknown. The value probes' entries are unchanged.
 
-## 9. Related work
+## 9. Next generation, built and not deployed
+
+Everything in this section is in the repository, built and tested against
+the stubbed SDK, and **not deployed** on any network. Section 2 lists what
+is deployed, and none of it has changed. The design notes are in
+[docs/router.md](router.md), [docs/keycache.md](keycache.md) and
+[docs/verifier.md](verifier.md).
+
+**No address is permanent.** Bradbury cannot upgrade a contract in place, so
+any change is a new deployment, the testnet itself may be reset, and mainnet
+will be deployed from scratch. The split below exists so that changes to key
+handling or verification do not force a new entry point, not because the
+entry point cannot change; see [docs/router.md](router.md#why-it-exists).
+
+Registry v1 does two jobs, routing versions and caching keys, and every
+planned change was to the second. The next generation splits them:
+
+| contract | source | what it is | built size, node's deploy gas estimate |
+|----------|--------|------------|----------------------------------|
+| Router | `contracts/router/` | name to current address, a version history, pinned labels, and a 48 hour delay on every change after a name's first address. Nothing about keys, DNS, fees or attestations | 6 043 bytes, 5.68 M gas, 33.8% of 2^24 |
+| KeyCache | `contracts/keycache/` | the key half of Registry v1, plus a 24 hour quarantine before a new key is usable | 12 479 bytes, 10.65 M gas, 63.5% of 2^24 |
+| Verifier v1.2 | `contracts/verifier/` | v1.1 plus the refusals and views below; finds the KeyCache through the Router on every call | 18 289 bytes, 15.34 M gas, 91.4% of 2^24 |
+
+Gas is the node's `eth_estimateGas` for each deploy, from `tools/deploy.py
+--estimate-only` on 2026-09-26; nothing was sent. The builds' rule of 870
+gas per byte gives 31.3, 64.7 and 94.8 percent, and is not an upper bound:
+it is under the node's figure for the Router. Verifier v1.2 is the one
+close to the cap. `tools/deploy.py` signs at three times the estimate
+clamped to 2^24, so its gas limit is only 1.09 times its estimate; see
+[docs/verifier.md](verifier.md#building-checking-and-deploying).
+
+**Router.** `resolve(name)`, `resolve_pinned(name, version)`,
+`history(name)`, `pending(name)`. `set_version(name, version_label,
+address)` is owner only. The first address of a name takes effect at once,
+since nobody can be bound to a name that has never resolved; every later
+one is recorded as a pending change, anyone can `apply_version(name)` 48
+hours later, and the owner can `cancel_version(name)` before then. A label, once applied, never names another address, so a
+consumer that audited a version pins its label and is unaffected by any
+later change. This replaces the trust assumption of section 3.4: a change is
+visible for 48 hours before it takes effect, and a pinned consumer does not
+see it at all. Ownership moves in two steps. No fee, nothing payable.
+
+**KeyCache.** `register_key` reads both resolvers as Registry v1 does and
+stores the key as `pending`. `confirm_key`, open to anyone once 24 hours
+have passed since `first_seen`, re-reads both resolvers and activates the
+key only if the same DER is still published on both; otherwise the pending
+record is deleted and the reason recorded. `refresh_key` and `retire_key`
+work as on Registry v1, with the two flags folded into one `state`
+(`pending`, `active`, `rotated`, `retired`). `key_status(domain, selector)`
+returns the state, the key, `key_bits`, `key_sha256`, `first_seen`,
+`activated_at` and `refreshed_at` in one read, and replaces `get_key`, whose
+shape cannot say `pending`. `last_failure(domain, selector)` exposes the
+last failed lookup, so every outcome of a write that stores nothing is still
+a view (rule 15). No fee. It starts empty; keys are registered again.
+
+**Verifier v1.2.** Everything v1.1 does, and:
+
+- a selected signature carrying `l=` is refused and refunded with
+  `body length limit not supported`. It is decided on the agreed verdict,
+  after the validators have done the work, and is the one refusal that
+  comes after it;
+- a key whose state is `pending`, `rotated` or `retired` is refused and
+  refunded with `key pending`, `key rotated` or `key retired`; only an
+  `active` key attests;
+- `router unreadable`, `router resolves no keycache` and `keycache
+  unreadable` refuse and refund when the KeyCache cannot be found or read;
+- `get(id)` returns `schema_version`, `"2"`, with every record; v1 and v1.1
+  records are schema 1;
+- `records_of(requester)` and `last_refusal(requester)` expose what a
+  requester's calls wrote and why the last refused one was refused;
+- the constructor argument is the Router address, and `router()` replaces
+  `registry()`.
+
+With v1.2, section 4.6 gains two guarantees for `valid` true: the key was
+`active` in the KeyCache at attestation time, which means both resolvers
+had returned the same DER for it on two reads at least 24 hours apart and it
+had not been marked rotated or retired since, and the selected signature
+carried no `l=`.
+Rule 8 still applies: a key rotated or retired after a record was written
+does not change the record, so a consumer that releases value reads
+`key_status` at decision time.
+
+**Where the build differs from the proposal.**
+
+- The proposal was one Registry v2. It is two contracts, so that key
+  handling can change behind a Router that does not.
+- The proposal said a takeover would have to fool both resolvers "for the
+  whole delay". The contract cannot watch DNS in between: it reads twice, at
+  registration and at confirmation, at least 24 hours apart. A takeover has
+  to be in place at both reads, which in practice means holding it across
+  the window, and the KeyCache owner has the window to retire a pending key
+  that looks wrong.
+- `confirm_key` tells a changed key from an unreadable resolver. When both
+  resolvers answer and the key is not the one first read (changed, absent,
+  disagreeing, undecodable), the pending key is discarded. When a resolver
+  cannot be read, the key stays pending with its `first_seen`, the attempt
+  is recorded in `last_failure`, and `confirm_key` can be called again: an
+  outage says nothing about the key. See [docs/keycache.md](keycache.md).
+- The Router's delay protects changes, not initialization: the first
+  address of a name takes effect at once, so a new Router is usable as soon
+  as it is wired. See [docs/router.md](router.md#the-delay).
+- `last_refusal` holds the latest reason only and is not cleared by a
+  recorded call, so two refusals in a row for the same reason read the
+  same. A client tells them apart by the transaction's own status and by
+  `records_of`, which grows on every recorded call.
+- The Router emits no event for a pending change: it is state, read through
+  `pending(name)`, as every Lacre pointer has been.
+
+## 10. Related work
 
 **ZK Email** (Ethereum). The user generates a zero-knowledge proof off
 chain, and a contract verifies it against a DKIM key registry. Keys in that
