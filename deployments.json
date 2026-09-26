@@ -1,5 +1,19 @@
 {
   "bradbury": {
+    "keycache": {
+      "address": "0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251",
+      "commit": "153693c17c678361a9530ce5bee15324848822b0",
+      "commit_dirty": false,
+      "consensus_tx": "0x5cbfc8e992abff50c1b5bd383feea66316326b34ce23104036c39123d83af51b",
+      "deployed_at": "2026-09-26T20:54:51+00:00",
+      "inlined_modules": {
+        "dkimkey.py": "93e04f5410f5af23286d14723898086303b58572050ab63c40eeac4b5ce50cda"
+      },
+      "provenance": "recorded at deploy by tools/deploy.py",
+      "source_path": "contracts/keycache/keycache.py",
+      "source_sha256": "77e9413af044150aa1ce4a9af990dc192bfc590b49226324ac56c61d9743cfa8",
+      "source_size": 12479
+    },
     "registry": {
       "address": "0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc",
       "commit": "a56f1c965687614cb15b6ac42cfbb7f7da285a5d",
