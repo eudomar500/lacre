@@ -13,6 +13,18 @@
       "source_sha256": "5a122451772568136bbce051910e18e799d00bac3affb75e793a8261a743b7d7",
       "source_size": 11646
     },
+    "router": {
+      "address": "0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9",
+      "commit": "93d3592e90c939e450b78bb32ec54309b9445020",
+      "commit_dirty": false,
+      "consensus_tx": "0x86ae441073d12b9fe8f2d87ed7a78a8e8967b2640acd09607df72722925793b7",
+      "deployed_at": "2026-09-26T20:53:08+00:00",
+      "inlined_modules": {},
+      "provenance": "recorded at deploy by tools/deploy.py",
+      "source_path": "contracts/router/router.py",
+      "source_sha256": "2dc36351611a1f460c4ed0e56217e86742d189105312c32388a6e9266f166d86",
+      "source_size": 6043
+    },
     "value_probe": {
       "address": "0x22eB139537F8c77043cFF308727A778dFcaDCd33",
       "consensus_tx": "0x8a13038fa7bc4cbc34af6023bd83f32f7cca75141107231ac8dd4003da9bdcb7",
