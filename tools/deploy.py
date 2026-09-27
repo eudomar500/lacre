@@ -15,7 +15,9 @@ the commit the deployed source came from and that is only true of a clean
 tree: an uncommitted change to any tracked file, an untracked file under
 contracts/, lacre/ or the source path, a source git does not track, or an
 artifact that is not what its build.py produces now, and the deploy is
-refused with the list. --allow-dirty deploys anyway, for probes, and the
+refused with the list. The one tracked file left out is deployments.json,
+which this script writes itself, so that deploys in a row (a Router, then
+what it points at) do not each need a commit of the previous entry first. --allow-dirty deploys anyway, for probes, and the
 entry says the commit is dirty. The entry carries the commit, whether it was
 dirty, the source path, the SHA-256 and size of the exact bytes sent and the
 SHA-256 of every lacre/ module the build inlined; the same facts are printed

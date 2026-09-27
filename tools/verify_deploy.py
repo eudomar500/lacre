@@ -29,7 +29,7 @@ mismatch.
 Usage:
     python3 tools/verify_deploy.py registry
     python3 tools/verify_deploy.py verifier --network bradbury
-    python3 tools/verify_deploy.py 0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d
+    python3 tools/verify_deploy.py 0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed
     python3 tools/verify_deploy.py verifier_v1 --source contracts/verifier/verifier.py
 """
 

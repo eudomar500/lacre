@@ -189,6 +189,50 @@ def test_a_stale_artifact_refuses(monkeypatch, capsys, repo):
     assert "stale      contracts/demo/demo.py" in capsys.readouterr().out
 
 
+def test_a_second_deploy_after_its_own_record_is_clean(monkeypatch, capsys, repo):
+    # The first deploy's write to a tracked deployments.json must not refuse
+    # the next one, and the next entry still names HEAD and the exact bytes.
+    (repo / "deployments.json").write_text("{}\n")
+    git(repo, "add", "deployments.json")
+    git(repo, "commit", "-q", "-m", "empty record")
+    run_deploy(monkeypatch, repo)
+    assert git(repo, "status", "--porcelain").strip() == "M deployments.json"
+    assert provenance.dirty_paths(repo, "contracts/demo/demo.py") == []
+    capsys.readouterr()
+    run_deploy(monkeypatch, repo)
+    entry = recorded(repo)
+    source = (repo / "contracts" / "demo" / "demo.py").read_bytes()
+    assert entry["commit"] == head(repo)
+    assert entry["commit_dirty"] is False
+    assert entry["provenance"] == "recorded at deploy by tools/deploy.py"
+    assert entry["source_sha256"] == sha(source)
+    out = capsys.readouterr().out
+    assert "(clean tree)" in out
+    assert "dirty        :" not in out
+
+
+def test_only_the_root_deployments_json_is_left_out(monkeypatch, capsys, repo):
+    (repo / "deployments.json").write_text("{}\n")
+    (repo / "contracts" / "demo" / "deployments.json").write_text("{}\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "two records")
+    (repo / "deployments.json").write_text('{"x": 1}\n')
+    (repo / "contracts" / "demo" / "deployments.json").write_text('{"x": 1}\n')
+    (repo / "README.md").write_text("changed\n")
+    assert provenance.dirty_paths(repo, "contracts/demo/demo.py") == [
+        "modified   README.md (M)",
+        "modified   contracts/demo/deployments.json (M)"]
+    with pytest.raises(SystemExit):
+        run_deploy(monkeypatch, repo)
+    assert "dirty        : modified   README.md (M)" in capsys.readouterr().out
+
+
+def test_a_file_renamed_onto_deployments_json_is_dirty(repo):
+    git(repo, "mv", "README.md", "deployments.json")
+    assert provenance.dirty_paths(repo, "contracts/demo/demo.py") == [
+        "modified   deployments.json (R)"]
+
+
 def test_allow_dirty_deploys_and_marks_the_commit_dirty(monkeypatch, capsys, repo):
     (repo / "README.md").write_text("changed\n")
     (repo / "contracts" / "scratch.py").write_text("x = 1\n")

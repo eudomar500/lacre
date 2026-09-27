@@ -6,14 +6,18 @@ call, waits for consensus, and does not report success until the record is
 read back from the Verifier and its requester is the sender. The rules it
 follows are in docs/interfaces.md, section 5.
 
+It targets Verifier v1.2. The Verifier and the KeyCache are both resolved
+through the Router, at LATEST_FINAL, which is how the Verifier finds its
+KeyCache on every call; the Verifier must name the same Router in router().
+
 Usage:
     export PROBE_PK=0x<64 hex chars>
     python3 tools/attest.py (--url HTTPS_URL | --inline FILE) DOMAIN SELECTOR
-        [--network bradbury] [--verifier ADDRESS] [--value WEI]
+        [--network bradbury] [--router ADDRESS] [--value WEI]
         [--until accepted|finalized] [--attempts N] [--log FILE]
 
---verifier defaults to the "verifier" entry of deployments.json for the
-network. --value defaults to the Verifier's fee(). --until finalized, the
+--router defaults to the "router" entry of deployments.json for the network.
+--value defaults to the Verifier's fee(). --until finalized, the
 default, waits for the stored status FINALIZED or CANCELED and reads the
 record in LATEST_FINAL state; --until accepted stops at the first decision
 and reads it in LATEST_NONFINAL state, which is provisional: an ACCEPTED
@@ -35,11 +39,20 @@ The protocol, one attempt at a time:
 The Verifier's return value, a record id or a reason, is on no field of the
 consensus transaction: eqBlocksOutputs holds the output of the
 non-deterministic block only, and attest_inline has none. So the outcome is
-read from the Verifier itself. The record is the one at or after count()
-before the first attempt whose requester, domain, selector, source and
-fee_paid are this call's. A refusal writes nothing; with value attached it
-leaves a refund message to the sender on the transaction, and its reason is
-found by running the Verifier's own checks, read-only and in its order.
+read from the Verifier's own views. records_of(sender) and
+last_refusal(sender) are read before the first attempt; the record is an id
+records_of lists afterwards that it did not list then, whose domain,
+selector, source and fee_paid are this call's. With no such record, a
+last_refusal that changed is this call's reason. last_refusal is not cleared
+by a recorded call, so a refusal for the same reason as the one before reads
+the same: it is taken as this call's only when the transaction also refunds
+the value to the sender, and is otherwise a stop, because a transaction that
+executed and wrote nothing reads the same way.
+
+Before anything is sent, the checks the Verifier runs first are run here,
+read-only and in its order, so a call that would be refused is not sent: the
+URL or blob size, the fee, the names, and the key's state in the KeyCache,
+which has to be active; pending, rotated and retired keys are refused.
 
 A transaction that finalizes with a result other than AGREE, such as
 TIMEOUT, NO_MAJORITY or UNDETERMINED, wrote nothing, and on Bradbury the
@@ -57,8 +70,9 @@ Exit codes:
   3  every attempt finalized without executing
   4  stopped: an outcome the tool cannot judge (undecided at the bound,
      CANCELED, an appeal in progress, a read failure, a send whose outcome
-     is unknown). Nothing is sent again in that state; the consensus tx ids
-     printed are where to resume by hand.
+     is unknown, an unchanged last_refusal with no refund). Nothing is
+     sent again in that state; the consensus tx ids printed are where to
+     resume by hand.
 
 The private key is read only from PROBE_PK, by tools/chain.py, and is never
 printed or logged.
@@ -91,11 +105,17 @@ REFUSED = "refused"
 RESEND = "send again"
 STOP = "stop"
 
-# Limits of Verifier v1.1, contracts/verifier/verifier.py.
+# Limits of Verifier v1.2, contracts/verifier/verifier.py.
 MAX_DOMAIN = 253
 MAX_LABEL = 63
 MAX_BLOB = 16384
 MAX_URL = 512
+
+# Key states the Verifier names in its refusal; any other state that is not
+# "active" is refused as "key not registered". contracts/verifier/verifier.py,
+# cached_key().
+ACTIVE = "active"
+NAMED_STATES = ("pending", "rotated", "retired")
 
 # Bradbury has taken 20-25 minutes to accept, a queued transaction was
 # activated after 80, and the appeal window follows acceptance; an appeal
@@ -108,10 +128,6 @@ PROGRESS_S = 300
 # growing by REFUSED_PAUSE_S each time, as experiments/llm-probe-2/run.py does.
 REFUSED_RETRIES = 3
 REFUSED_PAUSE_S = 30
-
-# More new records than this since the first attempt is not a scan to run
-# blind.
-MAX_SCAN = 500
 
 FINAL = TransactionHashVariant.LATEST_FINAL
 NONFINAL = TransactionHashVariant.LATEST_NONFINAL
@@ -136,41 +152,58 @@ def as_number(value):
     return int(text) if text.isascii() and text.isdigit() else 0
 
 
-def refusal(view, verifier, method, payload, domain, selector, value):
+def must_read(view, address, name, args, variant):
+    """view() for a read the tool cannot go on without.
+
+    view(address, method, args, variant) returns chain.UNKNOWN when a read
+    fails, which stops the tool rather than guess.
+    """
+    answer = view(address, name, args, variant)
+    if answer is chain.UNKNOWN:
+        raise Stop("could not read %s() on %s" % (name, address))
+    return answer
+
+
+def key_refusal(record):
+    """The refusal cached_key() gives for a key_status() answer, or None."""
+    if not isinstance(record, dict):
+        return "keycache unreadable"
+    state = record.get("state", "")
+    if state != ACTIVE:
+        return "key " + state if state in NAMED_STATES else "key not registered"
+    try:
+        modulus = int(record["n_hex"], 16)
+        exponent = as_number(record["e"])
+    except (KeyError, TypeError, ValueError):
+        return "keycache unreadable"
+    if modulus > 1 and exponent > 2:
+        return None
+    return "key not registered"
+
+
+def refusal(view, verifier, keycache, method, payload, domain, selector, value):
     """The reason the Verifier would refuse this call now, or None.
 
-    The checks _attest runs before any work, in its order. view(address,
-    method, args, variant) returns chain.UNKNOWN when a read fails, which
-    stops the tool rather than guess.
+    The checks attest, attest_inline and _attest run before any work, in
+    their order. keycache is what the Router resolves "keycache" to, "" when
+    it resolves nothing. The body length refusal comes after the validators'
+    work and cannot be predicted here.
     """
-    def read(address, name, args, variant):
-        answer = view(address, name, args, variant)
-        if answer is chain.UNKNOWN:
-            raise Stop("could not read %s() on %s" % (name, address))
-        return answer
-
     if method == "attest":
         url = str(payload).strip()
         if not url.startswith("https://") or len(url) > MAX_URL:
             return "url not allowed"
     elif len(str(payload).encode("utf-8")) > MAX_BLOB:
         return "blob too large"
-    if value < int(read(verifier, "fee", [], NONFINAL)):
+    if value < int(must_read(view, verifier, "fee", [], NONFINAL)):
         return "fee not paid"
     name, label = normalize(domain, MAX_DOMAIN), normalize(selector, MAX_LABEL)
     if not name or not label:
         return "bad domain or selector"
-    registry = read(verifier, "registry", [], NONFINAL)
+    if not keycache:
+        return "router resolves no keycache"
     # The Verifier reads the key at LATEST_FINAL, so this does too.
-    key = read(registry, "get_key", [name, label], FINAL)
-    try:
-        modulus = int(key.get("n_hex", ""), 16) if key else 0
-    except ValueError:
-        modulus = 0
-    if (not key or key.get("retired") or modulus <= 1
-            or as_number(key.get("e", "")) <= 2):
-        return "key not registered"
-    return None
+    return key_refusal(must_read(view, keycache, "key_status", [name, label], FINAL))
 
 
 def ours(record, call):
@@ -183,23 +216,12 @@ def ours(record, call):
             and str(record.get("fee_paid")) == str(call["value"]))
 
 
-def locate(view, call, start, variant):
-    """[(record id, record)] for every record from id start that matches call."""
-    count = view(call["verifier"], "count", [], variant)
-    if count is chain.UNKNOWN:
-        raise Stop("could not read count() on the Verifier")
-    count = int(count)
-    if count - start > MAX_SCAN:
-        raise Stop("%d records were written since the first attempt; not scanning them"
-                   % (count - start,))
-    found = []
-    for index in range(start, count):
-        record = view(call["verifier"], "get", [str(index)], variant)
-        if record is chain.UNKNOWN:
-            raise Stop("could not read record %d" % (index,))
-        if ours(record, call):
-            found.append((str(index), record))
-    return found
+def snapshot(view, call, variant):
+    """{"ids": [record id, ...], "refusal": str}: what the Verifier holds for
+    the sender. Raises Stop when a read fails."""
+    ids = must_read(view, call["verifier"], "records_of", [call["sender"]], variant)
+    last = must_read(view, call["verifier"], "last_refusal", [call["sender"]], variant)
+    return {"ids": [str(record_id) for record_id in ids], "refusal": str(last)}
 
 
 def refunded(messages, call):
@@ -209,26 +231,37 @@ def refunded(messages, call):
         and message["value"] == call["value"] for message in messages)
 
 
-def outcome(view, messages, state, call, start):
-    """What an executed call returned, as far as the chain shows it.
+def outcome(view, messages, state, call, before):
+    """What an executed call returned, as far as the Verifier's views show it.
 
-    {"records": [(id, record), ...], "reason": str or None}. Raises Stop
-    when a read fails.
+    before is snapshot() ahead of the first attempt. Returns
+    {"records": [(id, record), ...], "reason": str or None,
+    "unchanged": str or None}; unchanged is a last_refusal that reads as it
+    did before and cannot be tied to this call. Raises Stop when a read fails.
     """
     variant = FINAL if state["status"] == "FINALIZED" else NONFINAL
-    records = locate(view, call, start, variant)
-    if records:
-        return {"records": records, "reason": None}
-    # With a URL, the non-deterministic block runs only after every refusal
-    # check has passed, so an output there rules a refusal out.
-    if call["method"] == "attest" and txstate.eq_block_values(state["eq_outputs"]):
-        return {"records": [], "reason": None}
-    reason = refusal(view, call["verifier"], call["method"], call["payload"],
-                     call["domain"], call["selector"], call["value"])
-    if reason is None and refunded(messages(), call):
-        reason = ("refused, with the value refunded; the reason is not stored on chain "
-                  "and the Verifier's checks pass now")
-    return {"records": [], "reason": reason}
+    after = snapshot(view, call, variant)
+    records = []
+    for record_id in after["ids"]:
+        if record_id in before["ids"]:
+            continue
+        record = must_read(view, call["verifier"], "get", [record_id], variant)
+        # records_of already keys on the requester; the other fields keep a
+        # concurrent call from the same sender from being taken for this one.
+        if ours(record, call):
+            records.append((record_id, record))
+    found = {"records": records, "reason": None, "unchanged": None}
+    last = after["refusal"]
+    if records or not last:
+        return found
+    # Every refusal writes last_refusal, even with the reason it already
+    # holds, so a changed value is this call's. An unchanged one is this
+    # call's only if the transaction also hands the value back.
+    if last != before["refusal"] or refunded(messages(), call):
+        found["reason"] = last
+    else:
+        found["unchanged"] = last
+    return found
 
 
 def judge(state, until, found, sender):
@@ -261,6 +294,11 @@ def judge(state, until, found, sender):
             return RECORDED, "record %s, requester %s" % (record_id, record["requester"])
     if found["reason"] is not None:
         return REFUSED, "the Verifier refused the call: %s" % (found["reason"],)
+    if found.get("unchanged") is not None:
+        return STOP, ("no new record, and last_refusal still reads %r as it did before the "
+                      "first attempt, with no refund on the transaction: a second refusal "
+                      "for that reason and a call that wrote nothing read the same"
+                      % (found["unchanged"],))
     if status == "FINALIZED":
         return RESEND, ("the call executed and FINALIZED but no record it wrote can be read "
                         "at LATEST_FINAL")
@@ -296,10 +334,10 @@ class Session:
         return lambda: txstate.messages(self.client, tx_id, sleep=self.sleep)
 
     def start(self):
-        count = self.view(self.call["verifier"], "count", [], FINAL)
-        if count is chain.UNKNOWN:
-            chain.die("could not read count() on the Verifier; nothing was sent")
-        return int(count)
+        try:
+            return snapshot(self.view, self.call, FINAL)
+        except Stop as error:
+            chain.die("%s; nothing was sent" % (error,))
 
     def send(self):
         """One transaction: its consensus tx id.
@@ -359,8 +397,8 @@ class Session:
                                        progress=PROGRESS_S, sleep=self.sleep)
         return txstate.stored(self.client, tx_id, sleep=self.sleep)
 
-    def outcome(self, state, tx_id, start):
-        return outcome(self.view, self.messages(tx_id), state, self.call, start)
+    def outcome(self, state, tx_id, before):
+        return outcome(self.view, self.messages(tx_id), state, self.call, before)
 
 
 def show_state(state):
@@ -380,8 +418,10 @@ def summary(sent, explorer):
 
 def protocol(session, attempts, until, explorer):
     """Run the attestation to a verdict; the exit code."""
-    start = session.start()
-    print("records from : id %d (count() at LATEST_FINAL before the first attempt)" % (start,))
+    before = session.start()
+    print("records_of   : %d id(s) for the sender at LATEST_FINAL before the first attempt"
+          % (len(before["ids"]),))
+    print("last_refusal : %s" % (repr(before["refusal"]) if before["refusal"] else "none",))
     sent = []
     for attempt in range(1, attempts + 1):
         print("\n--- attempt %d of %d ---" % (attempt, attempts))
@@ -406,7 +446,7 @@ def protocol(session, attempts, until, explorer):
             found = None
             if txstate.executed(state) and (until == "accepted"
                                             or state["status"] == "FINALIZED"):
-                found = session.outcome(state, tx_id, start)
+                found = session.outcome(state, tx_id, before)
         except Exception as error:
             print("STOPPED      : reading %s failed (%s: %s); nothing more is sent"
                   % (tx_id, type(error).__name__, str(error)[:200]))
@@ -441,12 +481,32 @@ def protocol(session, attempts, until, explorer):
     return EXIT_NOT_EXECUTED
 
 
-def verifier_address(network):
+def router_address(network):
     try:
-        entry = json.loads(DEPLOYMENTS.read_text())[network]["verifier"]
+        entry = json.loads(DEPLOYMENTS.read_text())[network]["router"]
         return entry["address"]
     except (OSError, ValueError, KeyError, TypeError):
-        chain.die("no verifier for %s in %s; pass --verifier" % (network, DEPLOYMENTS.name))
+        chain.die("no router for %s in %s; pass --router" % (network, DEPLOYMENTS.name))
+
+
+def resolve(view, router):
+    """(verifier, keycache) as the Router resolves them at LATEST_FINAL.
+
+    keycache is "" when the Router resolves none; the Verifier refuses every
+    call then, and refusal() says so. A Verifier that reads its keys through
+    another Router would be checked against the wrong KeyCache here, so that
+    stops the tool, as does a Verifier with no router() view, which is not
+    v1.2.
+    """
+    verifier = str(must_read(view, router, "resolve", ["verifier"], FINAL))
+    if not verifier:
+        raise Stop("the Router %s resolves no verifier" % (router,))
+    named = str(must_read(view, verifier, "router", [], FINAL))
+    if named.lower() != str(router).lower():
+        raise Stop("the Verifier %s reads its keys through the Router %s, not %s"
+                   % (verifier, named, router))
+    keycache = str(must_read(view, router, "resolve", ["keycache"], FINAL))
+    return verifier, keycache
 
 
 def log_to(path):
@@ -481,7 +541,7 @@ def parse(argv):
     source.add_argument("--url", help="HTTPS URL serving the signed headers")
     source.add_argument("--inline", metavar="FILE", help="file holding the signed headers")
     parser.add_argument("--network", default=chain.DEFAULT_NETWORK, choices=sorted(chain.NETWORKS))
-    parser.add_argument("--verifier", help="Verifier address (default: deployments.json)")
+    parser.add_argument("--router", help="Router address (default: deployments.json)")
     parser.add_argument("--value", type=int, help="wei to attach (default: fee())")
     parser.add_argument("--until", choices=("accepted", "finalized"), default="finalized")
     parser.add_argument("--attempts", type=int, default=3)
@@ -510,13 +570,18 @@ def main(argv=None):
         except (OSError, UnicodeDecodeError) as error:
             chain.die("cannot read %s: %s" % (args.inline, error))
         method = "attest_inline"
-    verifier = args.verifier or verifier_address(args.network)
+    router = args.router or router_address(args.network)
 
     account, client, net = chain.connect(args.network)
-    call = {"verifier": verifier, "method": method, "payload": payload,
+    call = {"verifier": None, "method": method, "payload": payload,
             "domain": args.domain, "selector": args.selector,
             "sender": account.address, "value": args.value}
     session = Session(net, client, account, None, call)
+    try:
+        verifier, keycache = resolve(session.view, router)
+    except Stop as error:
+        chain.die("%s; nothing was sent" % (error,))
+    call["verifier"] = verifier
     if call["value"] is None:
         fee = session.view(verifier, "fee", [], NONFINAL)
         if fee is chain.UNKNOWN:
@@ -524,7 +589,9 @@ def main(argv=None):
         call["value"] = int(fee)
 
     print("network      : %s (chain id %d)" % (args.network, net["chain_id"]))
-    print("verifier     : %s" % (verifier,))
+    print("router       : %s" % (router,))
+    print("verifier     : %s (resolve(\"verifier\") at LATEST_FINAL)" % (verifier,))
+    print("keycache     : %s (resolve(\"keycache\") at LATEST_FINAL)" % (keycache or "none",))
     print("method       : %s" % (method,))
     print("source       : %s" % (payload if method == "attest"
                                  else "%s, %d bytes" % (args.inline,
@@ -536,7 +603,7 @@ def main(argv=None):
     print("until        : %s, up to %d attempts" % (args.until, args.attempts))
 
     try:
-        reason = refusal(session.view, verifier, method, payload, args.domain,
+        reason = refusal(session.view, verifier, keycache, method, payload, args.domain,
                          args.selector, call["value"])
     except Stop as error:
         chain.die("%s; nothing was sent" % (error,))

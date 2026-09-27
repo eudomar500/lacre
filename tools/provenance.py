@@ -27,6 +27,12 @@ from pathlib import Path
 # dirty even though git status alone would let a commit ignore them.
 WATCHED = ("contracts", "lacre")
 
+# deploy.py writes this file itself after every deploy, so counting it would
+# refuse the next deploy until the entry is committed. No build reads it, so
+# a change to it does not change what HEAD says about the bytes deployed.
+# Only this exact path at the root is exempt.
+DEPLOYMENTS = "deployments.json"
+
 RECORDED_AT_DEPLOY = "recorded at deploy by tools/deploy.py"
 
 
@@ -69,7 +75,8 @@ def dirty_paths(root, source):
     the recorded commit is a claim about the whole tree. Untracked files count
     under contracts/, lacre/ and the source path, where they can change what
     is built. A source that git does not track, because it is new, ignored or
-    outside the repository, counts too: no commit contains it.
+    outside the repository, counts too: no commit contains it. The one
+    exception is a change to deployments.json itself, see DEPLOYMENTS.
     """
     problems = []
     if source is None:
@@ -86,6 +93,9 @@ def dirty_paths(root, source):
         if code[0] in "RC":
             # -z puts a rename's original path in the next field.
             index += 1
+        elif path == DEPLOYMENTS and source != DEPLOYMENTS:
+            # A rename or copy onto it still counts: another file moved.
+            continue
         if code == "??":
             if any(_inside(path, watched) for watched in WATCHED + (source,)):
                 problems.append("untracked  %s" % (path,))

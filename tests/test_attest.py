@@ -14,9 +14,13 @@ getTransactionData, recorded read-only on 24 September 2026:
                                      AGREE, refused with "fee not paid" and
                                      one refund message to the sender
 
-verifier_record.json is built to the shape Verifier.get() returns; v1.1 has
-written no record on chain to record one from. Stored states for CANCELED
-and an appeal are the recorded ones with the status changed.
+verifier_record.json is built to the shape Verifier.get() returns; no
+Verifier after v1 has written a record on chain to record one from, and the
+tests add the v1.2 schema_version to it. The Router, KeyCache and Verifier
+addresses are the Bradbury entries of deployments.json; the views they answer
+are stubbed from contracts/router/router.py, contracts/keycache/keycache.py
+and contracts/verifier/verifier.py. Stored states for CANCELED and an appeal
+are the recorded ones with the status changed.
 """
 
 import json
@@ -36,9 +40,12 @@ from genlayer_py.chains import testnet_bradbury
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 ABI = testnet_bradbury.consensus_data_contract["abi"]
 SENDER = "0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53"
-VERIFIER = "0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d"
-REGISTRY = "0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc"
+DEPLOYED = json.loads((ROOT / "deployments.json").read_text())["bradbury"]
+ROUTER = DEPLOYED["router"]["address"]
+KEYCACHE = DEPLOYED["keycache"]["address"]
+VERIFIER = DEPLOYED["verifier"]["address"]
 EXPLORER = "https://explorer-bradbury.genlayer.com"
+NO_L = "body length limit not supported"
 
 
 def recorded(name):
@@ -58,9 +65,13 @@ UNDERPAID, REFUND = recorded("consensus_verifier_underpaid.json")
 CANCELED = dict(AGREE, status="CANCELED")
 APPEALED = dict(TIMEOUT, status="APPEAL_COMMITTING")
 UNDETERMINED = dict(TIMEOUT, status="UNDETERMINED", result="NO_MAJORITY")
-RECORD = json.loads((FIXTURES / "verifier_record.json").read_text(encoding="ascii"))
-KEY = {"domain": "amazon.com", "selector": "sel1", "n_hex": "c3" * 128, "e": "65537",
-       "key_bits": "1024", "retired": False, "rotated": False}
+RECORD = dict(json.loads((FIXTURES / "verifier_record.json").read_text(encoding="ascii")),
+              schema_version="2")
+KEY = {"domain": "amazon.com", "selector": "sel1", "state": "active", "n_hex": "c3" * 128,
+       "e": "65537", "key_bits": "1024", "key_sha256": "ab" * 32,
+       "first_seen": "2026-09-26T21:34:15Z", "activated_at": "2026-09-27T21:40:00Z",
+       "refreshed_at": "2026-09-27T21:40:00Z"}
+NOTHING = {"ids": [], "refusal": ""}
 
 
 def call(**changes):
@@ -70,23 +81,34 @@ def call(**changes):
     return base
 
 
-def verifier(records=(), fee=0, key=KEY, count=None):
-    """A view function over a Verifier holding records, from id 0."""
+def verifier(records=(), fee=0, key=KEY, ids=None, refusal="", router=ROUTER,
+             resolves=None):
+    """A view function over the Router, the KeyCache and a Verifier holding
+    records from id 0. ids is what records_of answers for the sender, every
+    record by default; refusal is what last_refusal answers."""
     records = list(records)
+    ids = [str(index) for index in range(len(records))] if ids is None else ids
+    resolves = {"verifier": VERIFIER, "keycache": KEYCACHE} if resolves is None else resolves
 
     def view(address, method, args, variant):
+        if address == ROUTER and method == "resolve":
+            return resolves.get(args[0], "")
+        if address == KEYCACHE and method == "key_status":
+            return key
         if address == VERIFIER:
-            if method == "count":
-                return len(records) if count is None else count
+            if method == "records_of":
+                assert args == [SENDER]
+                return ids
+            if method == "last_refusal":
+                assert args == [SENDER]
+                return refusal
             if method == "get":
                 index = int(args[0])
                 return records[index] if index < len(records) else {}
             if method == "fee":
                 return fee
-            if method == "registry":
-                return REGISTRY
-        if address == REGISTRY and method == "get_key":
-            return key
+            if method == "router":
+                return router
         raise AssertionError((address, method, args))
     return view
 
@@ -96,16 +118,16 @@ class Session:
     snapshot per attempt, in order. The Verifier is read only for an
     attempt that executed."""
 
-    def __init__(self, states, snapshots=(), messages=(), the_call=None, start=0):
+    def __init__(self, states, snapshots=(), messages=(), the_call=None, before=None):
         self.call = the_call or call()
         self.states = list(states)
         self.snapshots = list(snapshots)
         self.message_list = list(messages)
-        self.first = start
+        self.before = NOTHING if before is None else before
         self.sent = []
 
     def start(self):
-        return self.first
+        return self.before
 
     def send(self):
         tx_id = "0x%064x" % (len(self.sent) + 1,)
@@ -115,9 +137,9 @@ class Session:
     def wait(self, tx_id, until):
         return self.states.pop(0)
 
-    def outcome(self, state, tx_id, start):
+    def outcome(self, state, tx_id, before):
         view = self.snapshots.pop(0)
-        return attest.outcome(view, lambda: self.message_list, state, self.call, start)
+        return attest.outcome(view, lambda: self.message_list, state, self.call, before)
 
 
 def run(session, attempts=3, until="finalized"):
@@ -157,24 +179,48 @@ def test_a_record_read_back_with_our_requester_exits_0(capsys):
     assert "attempt 1    : %s  %s/tx/%s" % (session.sent[0], EXPLORER, session.sent[0]) in out
 
 
-def test_a_reason_string_exits_2_and_is_not_sent_again(capsys):
-    session = Session([UNDERPAID], [verifier(fee=10 ** 16)], REFUND,
+def test_a_changed_last_refusal_exits_2_and_is_not_sent_again(capsys):
+    session = Session([UNDERPAID], [verifier(refusal="fee not paid")], REFUND,
                       call(method="attest", payload="https://example.com/h",
                            value=5 * 10 ** 15))
     assert run(session) == attest.EXIT_REFUSED
     out = capsys.readouterr().out
     assert len(session.sent) == 1
     assert "the Verifier refused the call: fee not paid" in out
+    assert "not sent again" in out
 
 
-def test_a_refund_is_a_refusal_even_when_the_checks_pass_now(capsys):
-    # The fee was set back to 0 after the underpaid call, as it was on chain.
-    session = Session([UNDERPAID], [verifier(fee=0)], REFUND,
+def test_an_unchanged_last_refusal_with_a_refund_is_this_calls(capsys):
+    # last_refusal is not cleared, so the same reason twice reads the same;
+    # the refund on the transaction is what ties it to this call.
+    before = {"ids": [], "refusal": "fee not paid"}
+    session = Session([UNDERPAID], [verifier(refusal="fee not paid")], REFUND,
                       call(method="attest", payload="https://example.com/h",
-                           value=5 * 10 ** 15))
+                           value=5 * 10 ** 15), before=before)
     assert run(session) == attest.EXIT_REFUSED
-    assert "refused, with the value refunded" in capsys.readouterr().out
+    assert "the Verifier refused the call: fee not paid" in capsys.readouterr().out
     assert len(session.sent) == 1
+
+
+def test_an_unchanged_last_refusal_without_a_refund_stops(capsys):
+    before = {"ids": [], "refusal": NO_L}
+    session = Session([AGREE, AGREE], [verifier(refusal=NO_L)], before=before)
+    assert run(session) == attest.EXIT_STOPPED
+    out = capsys.readouterr().out
+    assert len(session.sent) == 1
+    assert "last_refusal still reads %r" % (NO_L,) in out
+
+
+def test_the_body_length_refusal_comes_after_the_non_deterministic_block(capsys):
+    # Call 37 carries a non-deterministic output. On v1.2 that no longer
+    # rules a refusal out: l= is refused on the agreed verdict.
+    assert txstate.eq_block_values(AGREE["eq_outputs"])
+    before = {"ids": [], "refusal": "key pending"}
+    session = Session([AGREE], [verifier(refusal=NO_L)],
+                      the_call=call(method="attest", payload="https://example.com/h"),
+                      before=before)
+    assert run(session) == attest.EXIT_REFUSED
+    assert "the Verifier refused the call: %s" % (NO_L,) in capsys.readouterr().out
 
 
 def test_timeout_then_success_on_attempt_2(capsys):
@@ -212,7 +258,7 @@ def test_an_appeal_in_progress_stops_without_sending_again(capsys):
 
 
 def test_a_record_id_whose_get_is_empty_is_sent_again(capsys):
-    # count() moved to 1, but get("0") answers {}: executed, nothing readable.
+    # records_of lists "0", but get("0") answers {}: executed, nothing readable.
     first = verifier([{}])
     second = verifier([{}, dict(RECORD, id="1")])
     session = Session([AGREE, AGREE], [first, second])
@@ -223,7 +269,21 @@ def test_a_record_id_whose_get_is_empty_is_sent_again(capsys):
     assert "RECORD       : 1" in out
 
 
-def test_a_record_of_another_requester_is_not_ours(capsys):
+def test_no_new_record_and_no_refusal_ever_is_sent_again(capsys):
+    session = Session([AGREE, AGREE], [verifier(), verifier([RECORD])])
+    assert run(session) == attest.EXIT_RECORDED
+    assert len(session.sent) == 2
+    assert "no record it wrote can be read at LATEST_FINAL" in capsys.readouterr().out
+
+
+def test_a_new_record_of_another_attestation_is_not_ours(capsys):
+    other = dict(RECORD, domain="example.com")
+    session = Session([AGREE], [verifier([other])])
+    assert run(session, attempts=1) == attest.EXIT_NOT_EXECUTED
+    assert "RECORD" not in capsys.readouterr().out
+
+
+def test_a_record_of_another_requester_is_not_recorded(capsys):
     other = dict(RECORD, requester="0x" + "11" * 20)
     session = Session([AGREE], [verifier([other])])
     assert run(session, attempts=1) == attest.EXIT_NOT_EXECUTED
@@ -237,10 +297,10 @@ def test_two_matching_records_are_both_listed(capsys):
 
 
 def test_a_read_failure_stops(capsys):
-    session = Session([AGREE, AGREE], [verifier(count=chain.UNKNOWN)])
+    session = Session([AGREE, AGREE], [verifier(ids=chain.UNKNOWN)])
     assert run(session) == attest.EXIT_STOPPED
     assert len(session.sent) == 1
-    assert "could not read count() on the Verifier" in capsys.readouterr().out
+    assert "could not read records_of() on %s" % (VERIFIER,) in capsys.readouterr().out
 
 
 def test_undetermined_at_accepted_is_not_final_and_stops(capsys):
@@ -256,10 +316,23 @@ def test_still_accepted_at_the_finalized_bound_stops(capsys):
         in capsys.readouterr().out
 
 
-def test_records_start_at_the_count_before_the_first_attempt():
+def test_ids_listed_before_the_first_attempt_are_not_this_calls():
     view = verifier([RECORD, dict(RECORD, id="1")])
-    found = attest.outcome(view, lambda: [], AGREE, call(), 1)
+    found = attest.outcome(view, lambda: [], AGREE, call(), {"ids": ["0"], "refusal": ""})
     assert [record_id for record_id, _ in found["records"]] == ["1"]
+
+
+def test_the_views_are_read_at_the_state_the_decision_was_read_at():
+    variants = []
+
+    def view(address, method, args, variant):
+        variants.append((method, variant))
+        return verifier()(address, method, args, variant)
+
+    attest.outcome(view, lambda: [], AGREE, call(), NOTHING)
+    attest.outcome(view, lambda: [], dict(AGREE, status="ACCEPTED"), call(), NOTHING)
+    assert variants == [("records_of", attest.FINAL), ("last_refusal", attest.FINAL),
+                        ("records_of", attest.NONFINAL), ("last_refusal", attest.NONFINAL)]
 
 
 # ---- judging without a send ----------------------------------------------
@@ -274,30 +347,81 @@ def test_judge_without_an_outcome(state, verdict):
     assert attest.judge(state, "finalized", None, SENDER)[0] == verdict
 
 
+def refused(view, method="attest_inline", payload="x", domain="a.com", selector="s", value=0,
+            keycache=KEYCACHE):
+    return attest.refusal(view, VERIFIER, keycache, method, payload, domain, selector, value)
+
+
 def test_the_refusal_checks_run_in_the_verifiers_order():
     view = verifier(fee=10)
-    assert attest.refusal(view, VERIFIER, "attest", "http://x", "a.com", "s", 0) \
-        == "url not allowed"
-    assert attest.refusal(view, VERIFIER, "attest_inline", "x" * 16385, "a.com", "s", 0) \
-        == "blob too large"
-    assert attest.refusal(view, VERIFIER, "attest_inline", "x", "a.com", "s", 9) \
-        == "fee not paid"
-    assert attest.refusal(view, VERIFIER, "attest_inline", "x", " . ", "s", 10) \
-        == "bad domain or selector"
-    assert attest.refusal(verifier(key={}), VERIFIER, "attest_inline", "x", "a.com", "s", 0) \
-        == "key not registered"
-    assert attest.refusal(verifier(key=dict(KEY, retired=True)), VERIFIER, "attest_inline",
-                          "x", "a.com", "s", 0) == "key not registered"
-    assert attest.refusal(verifier(), VERIFIER, "attest_inline", "x", "Amazon.com.", "sel1",
-                          0) is None
+    assert refused(view, method="attest", payload="http://x") == "url not allowed"
+    assert refused(view, payload="x" * 16385) == "blob too large"
+    assert refused(view, value=9) == "fee not paid"
+    assert refused(view, domain=" . ", value=10) == "bad domain or selector"
+    assert refused(view, value=10, keycache="") == "router resolves no keycache"
+    assert refused(verifier(), domain="Amazon.com.", selector="sel1") is None
 
 
-def test_an_eq_output_on_a_url_call_rules_a_refusal_out():
-    # Call 37 carries a non-deterministic output; the key is gone now, so
-    # only the output can say the checks passed at execution.
-    found = attest.outcome(verifier(key={}), lambda: [], AGREE,
-                           call(method="attest", payload="https://example.com/h"), 0)
-    assert found == {"records": [], "reason": None}
+@pytest.mark.parametrize("key,reason", [
+    ({}, "key not registered"),
+    (dict(KEY, state="pending", activated_at=""), "key pending"),
+    (dict(KEY, state="rotated"), "key rotated"),
+    (dict(KEY, state="retired"), "key retired"),
+    (dict(KEY, state="unknown"), "key not registered"),
+    (dict(KEY, n_hex="01"), "key not registered"),
+    (dict(KEY, e="2"), "key not registered"),
+    (dict(KEY, n_hex="zz"), "keycache unreadable"),
+    (KEY, None),
+])
+def test_only_an_active_key_passes(key, reason):
+    assert refused(verifier(key=key)) == reason
+
+
+def test_the_key_is_read_at_latest_final_from_the_keycache():
+    reads = []
+
+    def view(address, method, args, variant):
+        reads.append((address, method, args, variant))
+        return verifier()(address, method, args, variant)
+
+    refused(view, domain=" Amazon.COM. ", selector="Sel1")
+    assert reads[-1] == (KEYCACHE, "key_status", ["amazon.com", "sel1"], attest.FINAL)
+
+
+def test_a_failed_key_read_stops_instead_of_guessing():
+    with pytest.raises(attest.Stop, match="could not read key_status"):
+        refused(verifier(key=chain.UNKNOWN))
+
+
+# ---- resolving through the Router -----------------------------------------
+
+def test_the_verifier_and_the_keycache_come_from_the_router():
+    assert attest.resolve(verifier(), ROUTER) == (VERIFIER, KEYCACHE)
+
+
+def test_a_router_with_no_keycache_resolves_to_empty():
+    view = verifier(resolves={"verifier": VERIFIER})
+    assert attest.resolve(view, ROUTER) == (VERIFIER, "")
+
+
+def test_a_router_with_no_verifier_stops():
+    with pytest.raises(attest.Stop, match="resolves no verifier"):
+        attest.resolve(verifier(resolves={}), ROUTER)
+
+
+def test_a_verifier_reading_another_router_stops():
+    with pytest.raises(attest.Stop, match="reads its keys through the Router"):
+        attest.resolve(verifier(router="0x" + "22" * 20), ROUTER)
+
+
+def test_a_verifier_without_router_view_stops():
+    # A Verifier before v1.2 has no router() view; the read fails.
+    with pytest.raises(attest.Stop, match="could not read router"):
+        attest.resolve(verifier(router=chain.UNKNOWN), ROUTER)
+
+
+def test_the_router_defaults_to_the_deployments_entry():
+    assert attest.router_address("bradbury") == ROUTER
 
 
 # ---- the send: a refused broadcast ----------------------------------------
