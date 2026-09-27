@@ -3,13 +3,20 @@
 The KeyCache records what RSA key a domain published under a DKIM selector.
 It is the key half of Registry v1, split out so that key handling can change
 without moving the entry point, plus a quarantine: a new key waits 24 hours
-and is read again before anything can use it. It is built and tested and
-**not deployed**; Registry v1 in [docs/registry.md](registry.md) is what holds
-keys on chain today. The [Router](router.md) resolves it under the name
-`keycache`, and Verifier v1.2 finds it that way on every call.
+and is read again before anything can use it. It was deployed on Bradbury on
+2026-09-26 at `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`, deploy consensus
+tx `0x5cbfc8e992abff50c1b5bd383feea66316326b34ce23104036c39123d83af51b`,
+from commit `153693c`. The [Router](router.md) resolves it under the name
+`keycache`, label `v1`, and Verifier v1.2 finds it that way on every call.
+Registry v1 in [docs/registry.md](registry.md) still holds the keys Verifier
+v1.1 reads.
 
-It starts empty. There is no migration from Registry v1: keys are registered
-again, and each one waits out the quarantine.
+It started empty. There is no migration from Registry v1: keys are
+registered again, and each one waits out the quarantine. The first,
+amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, was registered on
+2026-09-26 (`first_seen` `2026-09-26T21:34:15Z`) and is `pending` until
+`confirm_key` activates it, which the quarantine allows from 2026-09-27
+21:34:15 UTC.
 
 ## Why the quarantine
 

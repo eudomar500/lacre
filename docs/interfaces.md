@@ -4,8 +4,10 @@ This is the interface specification of every Lacre layer, written from the
 code that is deployed on Testnet Bradbury. Where it and another document
 disagree, this one follows the code. Sections 1 to 7 describe what is
 deployed. Section 8 describes what is planned and is a proposal only.
-Section 9 describes the next generation of contracts, which is built and
-tested in this repository and not deployed.
+Section 9 describes the Router, the KeyCache and Verifier v1.2, deployed on
+Bradbury on 2026-09-26 and now the current production layer. Sections 3 and
+4 describe Registry v1 and Verifier v1.1, the previous versions, which stay
+live.
 
 The key words MUST, MUST NOT, SHOULD and SHOULD NOT in section 5 are to be
 read as described in RFC 2119.
@@ -18,45 +20,125 @@ consumer to talk to another one.
 
 | layer | status | what it answers |
 |-------|--------|-----------------|
-| Registry | deployed, v1 | Which contract is the current Verifier, which contracts have held that name, and what RSA key a domain published under a selector. It is a key cache and a version router. |
-| Verifier | deployed, v1.1 | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
+| Router | deployed, current, the public address | Which contract currently holds a name (`verifier`, `keycache`), which contracts have held it, and which one a pinned version label names. |
+| KeyCache | deployed, current | What RSA key a domain published under a selector, and whether it is `pending`, `active`, `rotated` or `retired`. |
+| Verifier | deployed, v1.2 current | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
+| Registry | deployed, v1, previous version, still live | The key cache and version router that the Router and the KeyCache replace. Verifier v1.1 still reads its keys from it. |
 | Extractors | planned, see section 8 | What a signed body says. They will answer "what does it say". |
 
-The next generation splits the Registry into a Router and a KeyCache and
-adds Verifier v1.2. None of it is deployed; see section 9.
+The Router, the KeyCache and Verifier v1.2 split the Registry's two jobs and
+were deployed on Bradbury on 2026-09-26; see section 9 for what changed.
+Registry v1 and Verifier v1.1 stay live and keep answering, and records
+written on them stay readable there (section 3 and section 4).
 
 Which layer a consumer needs:
 
+- **Where do I start?** The Router, the one address an integrator is
+  given. `resolve("verifier")` and `resolve("keycache")` return the current
+  contracts, and `resolve_pinned(name, version)` the contract a reviewed
+  version label names.
 - **Who sent this?** The Verifier, through `check_for`. A consumer that
-  already holds a Verifier address needs nothing else. It uses the Registry
-  only to find that address, or to look up a key's current status.
+  already holds a Verifier address needs nothing else. It uses the Router
+  only to find that address.
 - **What does it say?** No deployed layer answers this today. A Verifier
   record carries the hooks an Extractor needs (`bh` and `body_canon`, see
   section 4), but the Verifier never reads a body.
-- **What key did this domain publish?** The Registry, through `get_key`.
+- **What key did this domain publish, and may it be used?** The KeyCache,
+  through `key_status`.
 
 ## 2. Deployed contracts
 
 All contracts are on Testnet Bradbury (chain id 4221), deployed from the
 owner wallet `0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53`. Read from the
-chain for this document, that wallet is still the owner of Registry v1 and
-of both Verifiers, and the treasury of both Verifiers. `deployments.json` records only the current entry
-per contract name. The retired addresses and their transactions come from
-[docs/registry.md](registry.md), [docs/verifier.md](verifier.md) and the
-chain.
+chain on 2026-09-27, that wallet is the owner of the Router, the KeyCache,
+Registry v1 and every Verifier, and the treasury of every Verifier.
+`deployments.json` records only the current entry per contract name, so its
+`verifier` entry is now Verifier v1.2. The previous addresses and their
+transactions come from [docs/registry.md](registry.md),
+[docs/verifier.md](verifier.md) and the chain.
 
-Every contract entry in `deployments.json`, the two value probes aside, carries the commit its source came from and the SHA-256 of the exact source sent on chain, and a reader checks one with `python3 tools/verify_deploy.py <name or address>`, which reads the source back from the deploy transaction without a key and compares it with both (section 8); `verifier_v1` is the one retired contract kept there, for its hash alone, with its commit recorded as unknown.
+**The integrator entry point is the Router,
+`0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`.** Everything current is
+reached through it: `resolve("verifier")` and `resolve("keycache")`. A
+consumer that pins a reviewed contract uses `resolve_pinned(name, version)`
+or keeps the address itself (section 9).
 
 | layer | version | status | address | deploy consensus tx | date (UTC) |
 |-------|---------|--------|---------|---------------------|------------|
-| Registry | v1 | current | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | `0x88e06a33bfd5c35dabe4ef49bb0cd69a208eed942dca60576bc08bed6e275058` | 2026-09-23 14:14 |
+| Router | - | current, the public address | `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9` | `0x86ae441073d12b9fe8f2d87ed7a78a8e8967b2640acd09607df72722925793b7` | 2026-09-26 20:53 |
+| KeyCache | label `v1` | current, `resolve("keycache")` | `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251` | `0x5cbfc8e992abff50c1b5bd383feea66316326b34ce23104036c39123d83af51b` | 2026-09-26 20:54 |
+| Verifier | v1.2, label `v1.2` | current, `resolve("verifier")` | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | `0xf4a587ea3db13ef10f38fa2ce78a917e052f38c9aa0ac661c7a8f0fa26b15121` | 2026-09-26 20:56 |
+| Registry | v1 | previous version, still live | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | `0x88e06a33bfd5c35dabe4ef49bb0cd69a208eed942dca60576bc08bed6e275058` | 2026-09-23 14:14 |
 | Registry | v0 | retired, nothing points at it | `0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e` | `0xf6884c48f915c659362cf1a820d84f89e145f9bbd1062e8ab7f5fa4c40225034` | 2026-09-22 |
-| Verifier | v1.1 | current, `version("verifier")` | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 2026-09-23 16:01 |
+| Verifier | v1.1 | previous version, still live, Registry v1 `version("verifier")` | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 2026-09-23 16:01 |
 | Verifier | v1 | retired by `set_version`, still readable | `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a` | `0x7b214b0f273c5c1b4135a7ed482cbab9b521c373ac88da3e57ba63f2d43132bc` | 2026-09-23 14:17 |
 
-Both Verifiers were deployed with Registry v1 as their constructor argument.
+The dates of the three 2026-09-26 contracts are `deployed_at` in
+`deployments.json`, written by `tools/deploy.py` when the deploy was
+accepted.
 
-Other transactions an integrator may want to check:
+Verifier v1 and v1.1 were deployed with Registry v1 as their constructor
+argument. Verifier v1.2 was deployed with the Router as its constructor
+argument, and `router()` on it returns the Router address. The version
+labels are the ones the Router's `history(name)` returns.
+
+Every contract entry in `deployments.json`, the two value probes aside,
+carries the commit its source came from and the SHA-256 of the exact source
+sent on chain, and a reader checks one with
+`python3 tools/verify_deploy.py <name or address>`, which reads the source
+back from the deploy transaction without a key and compares it with both
+(section 8). `verifier_v1` is the one retired contract kept there, for its
+hash alone, with its commit recorded as unknown. Verifier v1.1 is no longer
+in the file: its entry was the `verifier` entry, which the v1.2 deploy
+replaced, and its provenance is below.
+
+The three contracts deployed on 2026-09-26 were recorded at deploy time by
+`tools/deploy.py`, from clean trees:
+
+| contract | commit | source SHA-256 | source size | node's deploy gas estimate |
+|----------|--------|----------------|-------------|----------------------------|
+| Router | `93d3592e90c939e450b78bb32ec54309b9445020` | `2dc36351611a1f460c4ed0e56217e86742d189105312c32388a6e9266f166d86` | 6 043 bytes | 5 675 496 |
+| KeyCache | `153693c17c678361a9530ce5bee15324848822b0` | `77e9413af044150aa1ce4a9af990dc192bfc590b49226324ac56c61d9743cfa8` | 12 479 bytes | 10 652 847 |
+| Verifier v1.2 | `452de65b52c2c44ad0866d28ed7eb600f8caa920` | `dfc1c100f655779b0dfaa6129e81d9b109d08656d8289e883e191cb320189b48` | 18 289 bytes | 15 341 609 |
+
+The gas figures are the node's `eth_estimateGas` for the same source hashes
+from `tools/deploy.py --estimate-only` on 2026-09-26, before the deploys
+(section 9); the Verifier's was estimated with a placeholder Router
+argument. The KeyCache inlines `lacre/dkimkey.py` at
+`93e04f5410f5af23286d14723898086303b58572050ab63c40eeac4b5ce50cda` and
+Verifier v1.2 inlines `lacre/dkimcore.py` at
+`834bbcdbeac807610953f91148638002ba2280c35ed2bac028d8f2eb72301b92`, as
+recorded in `deployments.json`.
+
+**Wiring.** The Router was wired with two `set_version` calls from the owner
+wallet on 2026-09-26. Both names were new on this Router, so each took
+effect at once, without the 48 hour delay (section 9). `history(name)` on
+the Router returns them:
+
+| call | `set_at` |
+|------|----------|
+| `set_version("keycache", "v1", "0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251")` | `2026-09-26T20:57:38Z` |
+| `set_version("verifier", "v1.2", "0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed")` | `2026-09-26T20:58:43Z` |
+
+`pending("verifier")` and `pending("keycache")` are empty: no change is
+queued.
+
+**The first key on the KeyCache.** `register_key("amazon.com",
+"yg4mwqurec7fkhzutopddd3ytuaqrvuz")` was sent on 2026-09-26. `key_status`
+reads it back as `pending`, with `first_seen` `2026-09-26T21:34:15Z`, 1024
+bits and `key_sha256`
+`bbf3759e9e7f30d0ebd2dbe1e316afa63687820c1a582729114e8466c3ab329c`, the same
+key Registry v1 holds for that selector. It stays `pending` until someone
+calls `confirm_key`, which the KeyCache accepts from 24 hours after
+`first_seen`, 2026-09-27 21:34:15 UTC, and which activates it only if both
+resolvers still publish the same DER. Until then Verifier v1.2 refuses and
+refunds every amazon.com call on that selector with `key pending`, and
+Verifier v1.1, through Registry v1, still accepts it.
+
+Verifier v1.2 holds no records yet.
+
+Other transactions on the previous versions an integrator may want to
+check:
 
 | what | contract | consensus tx | date (UTC) |
 |------|----------|--------------|------------|
@@ -69,11 +151,20 @@ Record 0 on Verifier v1 was read back from the chain for this document. Its
 `attested_at` is `2026-09-23T14:48:13Z`, its `key_sha256` is
 `bbf3759e9e7f30d0ebd2dbe1e316afa63687820c1a582729114e8466c3ab329c` (a 1024
 bit key) and its `requester` is the owner wallet. Verifier v1.1 holds no
-records yet.
+records. What was measured on it is the refund test of 23 September 2026,
+with the fee set to 10 000 000 000 000 000 wei: an underpaid `attest`
+(`0xfa4c961ae457caa1181f366902508a1a7a58b0732ca040c205cdefb7f98e9269`) and
+an `attest` for an unregistered selector
+(`0x05f57ee857c116eead6909f252de2401c5679ffe69d235166db3b99de5bd874c`) both
+executed without reverting, wrote no record and had their whole value
+refunded at FINALIZED; see [docs/verifier.md](verifier.md#v11). Registry v1
+holds the amazon.com key registered on 23 September 2026, not retired and
+not rotated.
 
-The source that each current contract was deployed with is byte for byte
-`contracts/registry/registry.py` and `contracts/verifier/verifier.py` as of
-commit `a56f1c9`. Verifier v1 was deployed from a build that is not in the
+Registry v1 and Verifier v1.1 were deployed with source that is byte for
+byte `contracts/registry/registry.py` and `contracts/verifier/verifier.py`
+as of commit `a56f1c9`; `contracts/verifier/verifier.py` has since become
+the v1.2 build. Verifier v1 was deployed from a build that is not in the
 repository history.
 
 ## 3. Registry v1 interface
@@ -458,8 +549,9 @@ of the following were true when the record was written:
    itself against `bh` and `body_canon`, or wait for an Extractor. A `valid`
    record makes no statement about the body.
 8. A consumer that releases goods or money on an attestation MUST read the
-   key's current status from the Registry (`retired`, `rotated`) at
-   decision time. Other consumers SHOULD. A record keeps the key it was
+   key's current status at decision time: from the KeyCache (`state`, which
+   must be `active`) for a Verifier v1.2 record, from the Registry
+   (`retired`, `rotated`) for a v1 or v1.1 record. Other consumers SHOULD. A record keeps the key it was
    checked against, and neither flag changes it after it is written (see
    section 7, first registration is permanent).
 9. A caller of `attest` or `attest_inline` SHOULD send exactly `fee()` and
@@ -526,7 +618,7 @@ of the following were true when the record was written:
     31 minutes. Clients MUST NOT send a second call to the same contract
     before the first is decided. A gateway serving many agents SHOULD
     expect roughly 1,400 attestations per day per Verifier at best, and
-    SHOULD plan for several Verifiers behind the Registry.
+    SHOULD plan for several Verifiers behind the Router.
 14. **Status semantics.** A stored CANCELED is not final: in the probe D2
     incident, queued transactions stored as CANCELED were later activated
     and FINALIZED. The timestamped views (`getTransactionData`,
@@ -550,14 +642,21 @@ of the following were true when the record was written:
     call cannot be read from the chain: `eqBlocksOutputs` holds only the
     output of the non-deterministic block, and `attest_inline` has none, so
     neither a record id nor a refusal reason is available after the fact.
-    Every outcome of a write MUST therefore be exposed by a view. On
-    Verifier v1.1, `tools/attest.py` copes by reading `count()` before the
-    first attempt and scanning the records written since for one whose
-    `requester`, `domain`, `selector`, `source` and `fee_paid` match the
-    call, and, when there is none, by deriving the refusal reason from
-    running the Verifier's own checks read-only, in the Verifier's order.
-    Verifier v1.2, built and not deployed, adds `records_of(requester)` and
-    `last_refusal(requester)` for this (section 9).
+    Every outcome of a write MUST therefore be exposed by a view. Verifier
+    v1.2 does this with `records_of(requester)` and
+    `last_refusal(requester)` (section 9), and `tools/attest.py` confirms
+    through them: it reads both before the first attempt, takes as its
+    record an id `records_of` lists afterwards that it did not list then,
+    whose `domain`, `selector`, `source` and `fee_paid` match the call, and,
+    when there is none, takes a `last_refusal` that changed as the reason.
+    `last_refusal` is not cleared by a recorded call, so an unchanged value
+    is this call's refusal only when the transaction also refunds the value
+    to the sender; otherwise the tool stops, because a call that executed
+    and wrote nothing reads the same. On Verifier v1.1, which has neither
+    view, a client has to read `count()` before the first attempt, scan the
+    records written since, and derive a refusal by running the Verifier's
+    checks read-only, in its order; `tools/attest.py` did that until v1.2
+    was deployed and no longer targets v1.1.
 
 ## 6. Evidence and verdict
 
@@ -636,9 +735,10 @@ Bradbury on 24 September 2026, measured the design it will use:
   attacker's key is recorded. A later `refresh_key` that sees the real key
   again only sets `rotated`, and the Verifier ignores `rotated`, so the
   attacker's key keeps producing valid records until the owner calls
-  `retire_key`. Both remedies are built and not deployed (section 9): the
+  `retire_key`. Both remedies were deployed on 2026-09-26 (section 9): the
   registration quarantine in the KeyCache and refusing rotated keys in
-  Verifier v1.2.
+  Verifier v1.2. They do not reach Registry v1 and Verifier v1.1, which stay
+  live with this limit.
 - **Alignment in the parent direction.** `aligned` is true when the signing
   domain ends with `.` followed by `from_domain`, and no public suffix list
   is applied. A message with `From: x@co.uk` signed with `d=anything.co.uk`
@@ -684,14 +784,15 @@ Bradbury on 24 September 2026, measured the design it will use:
 
 Every item in this section is a proposal, except the first, which points to
 section 9, and the last one, deploy provenance, which is tooling and is in
-place. None of it is deployed, and all of the proposals are subject to
+place. None of the proposals is deployed, and all of them are subject to
 change.
 
 - **Registry v2 and Verifier v1.2.** The proposals listed here until
   2026-09-26 (pinned versions, a delay before a version change, the
   registration quarantine, refusing `l=` and rotated keys, a schema version,
-  `records_of` and `last_refusal`) are built, as a Router, a KeyCache and
-  Verifier v1.2, and are described in section 9. None of it is deployed.
+  `records_of` and `last_refusal`) were built as a Router, a KeyCache and
+  Verifier v1.2, deployed on Bradbury on 2026-09-26, and are described in
+  section 9.
 - **Pre-paid balances: not planned for Bradbury.** The per-call value model
   is kept, because the protocol already refunds the value of calls that do
   not execute (section 5, rule 12). Pre-paid balances are a study item for
@@ -705,11 +806,14 @@ change.
   every deployment.
 - **Deploy provenance (in place).** `tools/deploy.py` checks the working
   tree before it reads the key or touches the network. It refuses to deploy,
-  and prints what is wrong, when a tracked file has uncommitted changes, when
+  and prints what is wrong, when a tracked file other than
+  `deployments.json` has uncommitted changes, when
   an untracked file sits under `contracts/`, `lacre/` or the source path,
   when git does not track the source, or when the artifact is not what the
-  `build.py` beside it produces now. `--allow-dirty` deploys anyway, for
-  probes, and the entry then says `commit_dirty: true`. Each new entry
+  `build.py` beside it produces now. `deployments.json` is left out because
+  the deploy writes it itself: without that, each deploy in a series
+  refused the next until its entry was committed. `--allow-dirty` deploys
+  anyway, for probes, and the entry then says `commit_dirty: true`. Each new entry
   records `commit` (the full sha), `commit_dirty`, `source_path`,
   `source_sha256` and `source_size` of the exact bytes sent, which is the
   built artifact and not the template, and `inlined_modules`, the SHA-256 of
@@ -723,20 +827,24 @@ change.
   the recorded module hashes against that commit. It prints match, MISMATCH
   or cannot check for each item and exits 1 on any mismatch. For an entry
   with no commit it lists the checks it cannot make and compares the chain
-  bytes with the current build instead. Every contract so far was deployed
-  before the commit that contains it, so the existing entries were
-  backfilled on 2026-09-26 with what could be proven, and say so: the
+  bytes with the current build instead. The Router, the KeyCache and
+  Verifier v1.2 are the first entries recorded at deploy time. Every
+  contract before them was deployed before the commit that contains it, so
+  those entries were backfilled on 2026-09-26 with what could be proven, and
+  said so: the
   deployed bytes of Registry v1 and Verifier v1.1 equal the build at commit
   `a56f1c9`, which they record with the module hashes at that commit, and
   Verifier v1, whose build is not in the repository history, records only
   the SHA-256 of its deployed source, as `verifier_v1`, with the commit
-  unknown. The value probes' entries are unchanged.
+  unknown. The Verifier v1.1 entry was then replaced by the v1.2 deploy
+  (section 2). The value probes' entries are unchanged.
 
-## 9. Next generation, built and not deployed
+## 9. Router, KeyCache and Verifier v1.2
 
-Everything in this section is in the repository, built and tested against
-the stubbed SDK, and **not deployed** on any network. Section 2 lists what
-is deployed, and none of it has changed. The design notes are in
+Everything in this section was built and tested against the stubbed SDK and
+**deployed on Bradbury on 2026-09-26**; section 2 has the addresses, the
+deploy transactions, the wiring and the state of the first key. The Router
+is the public address. The design notes are in
 [docs/router.md](router.md), [docs/keycache.md](keycache.md) and
 [docs/verifier.md](verifier.md).
 
@@ -756,7 +864,8 @@ planned change was to the second. The next generation splits them:
 | Verifier v1.2 | `contracts/verifier/` | v1.1 plus the refusals and views below; finds the KeyCache through the Router on every call | 18 289 bytes, 15.34 M gas, 91.4% of 2^24 |
 
 Gas is the node's `eth_estimateGas` for each deploy, from `tools/deploy.py
---estimate-only` on 2026-09-26; nothing was sent. The builds' rule of 870
+--estimate-only` on 2026-09-26, before the deploys, for the same source
+hashes that were then deployed. The builds' rule of 870
 gas per byte gives 31.3, 64.7 and 94.8 percent, and is not an upper bound:
 it is under the node's figure for the Router. Verifier v1.2 is the one
 close to the cap. `tools/deploy.py` signs at three times the estimate

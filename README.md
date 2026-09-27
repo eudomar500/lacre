@@ -4,7 +4,7 @@ Lacre is signed evidence for Intelligent Contracts on GenLayer. An email that
 a domain has DKIM-signed is already a statement that domain will stand behind:
 the signature covers the headers, the public key is published in DNS, and
 anyone can check it. Lacre puts that check inside a contract. Validators read
-the signed headers, take the sender's key from the Registry, where it was
+the signed headers, take the sender's key from the KeyCache, where it was
 recorded from DNS by validator consensus, verify the RSA signature
 independently, and agree on a small record: the signing domain, the selector,
 the body hash the signature claimed, a SHA-256 of the Message-ID, the key
@@ -33,20 +33,33 @@ committed to and parses fields out of it with no RSA on chain. The value
 probes, `experiments/value-probe/` and `experiments/value-probe-2/`, answer
 whether a contract can be paid in GEN and pay out again: it can, as long as
 the payout uses the external message path and settles on finalization, because
-the internal message path moves zero wei to a wallet and reports no error. The
-first production contract is the Registry in `contracts/registry/`, which
-holds the DKIM keys and the version pointers everything else resolves through.
-Registry v1 is live on Bradbury at
-`0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc`, with the amazon.com key
-registered and readable; v0, at
+the internal message path moves zero wei to a wallet and reports no error.
+
+The production layer on Bradbury was redeployed on 2026-09-26. Its public
+address is the Router in `contracts/router/`, at
+`0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which resolves `verifier` and
+`keycache` to the current contracts and puts a 48 hour delay on any later
+change. The KeyCache in `contracts/keycache/`, at
+`0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`, holds the DKIM keys and makes
+each new one wait out a 24 hour quarantine before it can be used; the
+amazon.com key was registered there on 2026-09-26 and is pending until
+`confirm_key`. Verifier v1.2 in `contracts/verifier/`, at
+`0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed`, turns a DKIM signature into the
+record described above, reads its keys from the KeyCache through the Router,
+and only attests against an active key.
+
+The previous versions stay live. Registry v1, at
+`0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc`, holds the amazon.com key and
+still points at Verifier v1.1, at
+`0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d`, where refused calls were
+measured to answer and refund in full at finalization. Registry v0, at
 `0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e`, is retired and nothing points
-at it. Reading through it is the Verifier in `contracts/verifier/`, which
-turns a DKIM signature into the record described above. Verifier v1.1 is live
-at `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` and is what the Registry
-points at. v1, at `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a`, is retired
-because it reverted on an underpaid call, and a reverting call on this chain
-keeps the value it carried; v1.1 answers and refunds instead. See
-[docs/registry.md](docs/registry.md), [docs/verifier.md](docs/verifier.md),
+at it. Verifier v1, at `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a`, is
+retired because it reverted on an underpaid call, and a reverting call on
+this chain keeps the value it carried. Every address and deploy transaction
+is in [docs/interfaces.md](docs/interfaces.md), section 2. See also
+[docs/router.md](docs/router.md), [docs/keycache.md](docs/keycache.md),
+[docs/verifier.md](docs/verifier.md), [docs/registry.md](docs/registry.md),
 [experiments/dkim-onchain-probe/README.md](experiments/dkim-onchain-probe/README.md)
 and
 [experiments/value-probe-2/README.md](experiments/value-probe-2/README.md).
@@ -57,7 +70,10 @@ The interface of every layer, for integrators and reviewers, is in [docs/interfa
 
 `tools/` holds the production scripts: `deploy.py`, `call.py`, `read.py`,
 which needs no key, and `attest.py`, the reference client for the Verifier.
-`attest.py` exits 0 only once the attesting transaction is FINALIZED with an
+`attest.py` finds Verifier v1.2 and the KeyCache through the Router, does not
+send a call for a key that is not active, and confirms the outcome through
+the Verifier's `records_of` and `last_refusal` views. It exits 0 only once
+the attesting transaction is FINALIZED with an
 AGREE result and FINISHED_WITH_RETURN, and the record has been read back at
 `LATEST_FINAL` with the sender as its requester. A refusal is reported with
 its reason and not sent again. A transaction that finalized without
@@ -67,4 +83,5 @@ a failed read, stops it with the consensus tx id and nothing more is sent.
 Each outcome has its own exit code, listed in the script. The rules it
 follows are in [docs/interfaces.md](docs/interfaces.md), section 5.
 
-Status: research probes plus the Registry and the Verifier on a testnet.
+Status: research probes plus the Router, the KeyCache and the Verifier on a
+testnet, with the previous Registry and Verifier still live beside them.

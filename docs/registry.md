@@ -1,9 +1,16 @@
 # Registry
 
-The Registry is the one address a consumer has to know. Everything else in
-Lacre is reachable from it. This page describes v1, which replaces v0 on
-Bradbury before anything was pointed at v0; the addresses and the
-transactions behind them are under Deployments below.
+Registry v1 is the previous version of the production layer. Since
+2026-09-26 the address a consumer has to know is the [Router](router.md),
+and keys come from the [KeyCache](keycache.md); see
+[docs/interfaces.md](interfaces.md), section 2. Registry v1 stays live:
+Verifier v1.1 still reads its keys from it and `version("verifier")` still
+points at v1.1.
+
+Until then the Registry was the one address a consumer had to know, and
+everything else in Lacre was reachable from it. This page describes v1,
+which replaces v0 on Bradbury before anything was pointed at v0; the
+addresses and the transactions behind them are under Deployments below.
 
 ## Why it exists
 
@@ -310,7 +317,7 @@ retired addresses are kept here instead.
 
 | version | network | address | status |
 |---------|---------|---------|--------|
-| v1 | Bradbury | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | current |
+| v1 | Bradbury | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | previous version, still live; replaced by the Router and the KeyCache on 2026-09-26 |
 | v0 | Bradbury | `0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e` | retired |
 
 ### v1

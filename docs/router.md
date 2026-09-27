@@ -1,9 +1,14 @@
 # Router
 
-The Router is the entry point of the next generation of Lacre contracts. It
-maps a name to the address of the contract that currently answers to it, and
-does nothing else. It is built and tested and **not deployed**: the Registry
-v1 in [docs/registry.md](registry.md) is still what is on chain.
+The Router is the entry point of Lacre, the one public address. It maps a
+name to the address of the contract that currently answers to it, and does
+nothing else. It was deployed on Bradbury on 2026-09-26 at
+`0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, deploy consensus tx
+`0x86ae441073d12b9fe8f2d87ed7a78a8e8967b2640acd09607df72722925793b7`, from
+commit `93d3592`, and resolves `keycache` (label `v1`) and `verifier`
+(label `v1.2`); [docs/interfaces.md](interfaces.md), section 2, has the
+wiring. Registry v1 in [docs/registry.md](registry.md) is the previous
+version and stays live.
 
 ## Why it exists
 

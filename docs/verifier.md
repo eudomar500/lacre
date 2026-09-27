@@ -8,11 +8,13 @@ the body hash the signature claimed, how the body was canonicalized, a digest
 of the Message-ID, the From domain and whether it aligns with the signer, the
 key it was checked against, a verdict and a reason.
 
-It never reads DNS itself. v1.1, the deployed version, reads keys from the
-[Registry](registry.md) it was deployed with.
+It never reads DNS itself. v1.2, the current version, deployed on Bradbury
+on 2026-09-26, is what the [Router](router.md) resolves `verifier` to. v1.1,
+the previous version, is still live and reads keys from the
+[Registry](registry.md) it was deployed with. The addresses are under
+[Deployments](#deployments).
 
-This page describes **v1.2, which is built and not deployed**, and says where
-it differs from v1.1. v1.2 reads keys from the [KeyCache](keycache.md), which
+This page describes **v1.2** and says where it differs from v1.1. v1.2 reads keys from the [KeyCache](keycache.md), which
 it finds through the [Router](router.md) on every call, so the KeyCache can be
 replaced without a new Verifier. What v1.2 adds over v1.1:
 
@@ -558,11 +560,12 @@ export PROBE_PK=0x<64 hex chars>
 python3 tools/deploy.py contracts/verifier/verifier.py 0x<router> --estimate-only
 ```
 
-`contracts/verifier/verifier.py` is now the v1.2 build. The v1.1 source that
-is deployed is that file as of commit `a56f1c9`, which is what
-`deployments.json` records and `tools/verify_deploy.py verifier` compares the
-chain against. `genvm-lint` reports `E105` on the validate half for the
-reason given in [docs/router.md](router.md#building-checking-and-deploying).
+`contracts/verifier/verifier.py` is the v1.2 build, deployed from commit
+`452de65`, which is what the `verifier` entry of `deployments.json` records
+and `tools/verify_deploy.py verifier` compares the chain against. The v1.1
+source that is deployed is that file as of commit `a56f1c9`. `genvm-lint`
+reports `E105` on the validate half for the reason given in
+[docs/router.md](router.md#building-checking-and-deploying).
 
 The build splices only the part of `lacre/dkimcore.py` the contract reaches.
 The Verifier takes its key from the KeyCache, the Registry on v1.1, so the
@@ -620,36 +623,59 @@ part of the deploy rather than a later step. A contract cannot be read until
 it is FINALIZED, so the first read after a deploy can fail and say nothing
 about the deploy itself.
 
-v1.2, when it is deployed, takes the Router address instead. On a Router
-where `verifier` has never resolved, `set_version` takes effect at once; on
-one where it already resolves, the change waits the Router's 48 hours:
+v1.2 takes the Router address instead. On a Router where `verifier` has
+never resolved, `set_version` takes effect at once; on one where it already
+resolves, the change waits the Router's 48 hours:
 
 ```bash
 python3 tools/deploy.py contracts/verifier/verifier.py <ROUTER>
-python3 tools/call.py <ROUTER> set_version verifier 1.2 0x<verifier address>
+python3 tools/call.py <ROUTER> set_version verifier v1.2 0x<verifier address>
 python3 tools/call.py <ROUTER> apply_version verifier      # only if it was a change, 48 hours later
 ```
 
+That is how v1.2 went out on 2026-09-26: `verifier` had never resolved on
+the new Router, so the pointer took effect at once, under the label `v1.2`.
 Until the Router resolves `keycache`, every call is refused with
-`router resolves no keycache` and refunded. `tools/attest.py` is written for
-v1.1: it reads `registry()` and the Registry's `get_key` to derive a refusal
-and scans records to find its own, and has not been changed for v1.2.
+`router resolves no keycache` and refunded. `tools/attest.py` targets v1.2:
+it resolves the Verifier and the KeyCache through the Router, refuses to
+send when the key is not `active`, and confirms the outcome through
+`records_of` and `last_refusal`.
 
 ## Deployments
 
 `deployments.json` at the repository root is the machine-readable copy of the
 current deployment, written by `tools/deploy.py`. It keeps one entry per
-contract name, so a redeploy replaces the `verifier` entry; retired addresses
-are kept here instead. Both versions below are on Bradbury and were deployed
-and exercised on 23 September 2026 from the owner wallet
-`0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53`.
+contract name, so a redeploy replaces the `verifier` entry, which the v1.2
+deploy did; earlier addresses are kept here instead. All three versions
+below are on Bradbury, deployed from the owner wallet
+`0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53`, v1 and v1.1 on 23 September
+2026 and v1.2 on 26 September 2026.
 
 | version | address | deploy consensus tx | deploy gas | source | status |
 |---------|---------|---------------------|------------|--------|--------|
-| v1.1 | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 13.21 M used, 0.028 GEN, AGREE | 16 912 bytes | live, `version("verifier")` points here |
+| v1.2 | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | `0xf4a587ea3db13ef10f38fa2ce78a917e052f38c9aa0ac661c7a8f0fa26b15121` | 15 341 609 estimated by the node | 18 289 bytes | current, the Router's `resolve("verifier")` |
+| v1.1 | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 13.21 M used, 0.028 GEN, AGREE | 16 912 bytes | previous version, still live, Registry v1 `version("verifier")` points here |
 | v1 | `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a` | `0x7b214b0f273c5c1b4135a7ed482cbab9b521c373ac88da3e57ba63f2d43132bc` | 13.24 M used of 14.3 M estimated, 0.028 GEN, AGREE | 16 954 bytes | retired by `set_version` |
 
-v1.2 is built and tested and has not been deployed anywhere.
+### v1.2
+
+v1.2 was deployed by `tools/deploy.py` from a clean tree at commit
+`452de65b52c2c44ad0866d28ed7eb600f8caa920`, source SHA-256
+`dfc1c100f655779b0dfaa6129e81d9b109d08656d8289e883e191cb320189b48`, with
+`lacre/dkimcore.py` at
+`834bbcdbeac807610953f91148638002ba2280c35ed2bac028d8f2eb72301b92` inlined,
+all as recorded in `deployments.json`. Its constructor argument is the
+Router `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which `router()`
+returns. The gas figure is the node's estimate for the same source, from
+[Building, checking and deploying](#building-checking-and-deploying).
+
+The Router pointed `verifier` at it with label `v1.2` on 2026-09-26
+(`set_at` `2026-09-26T20:58:43Z` in `history("verifier")`), and resolves
+`keycache` to the KeyCache
+`0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`. The one key registered there,
+amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, is `pending` until
+`confirm_key`, so until then v1.2 refuses and refunds amazon.com calls on
+that selector with `key pending`. v1.2 holds no records yet and its fee is 0.
 
 ### v1.1
 
