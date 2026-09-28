@@ -66,6 +66,8 @@ and
 
 The interface of every layer, for integrators and reviewers, is in [docs/interfaces.md](docs/interfaces.md).
 
+The pattern Extractor in `contracts/extractor/` exists and is not deployed yet: it checks a body against the `bh` of a Verifier record and reads fields out of it with per-sender patterns. See [docs/extractor.md](docs/extractor.md).
+
 ## Tools
 
 `tools/` holds the production scripts: `deploy.py`, `call.py`, `read.py`,

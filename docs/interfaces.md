@@ -7,7 +7,8 @@ deployed. Section 8 describes what is planned and is a proposal only.
 Section 9 describes the Router, the KeyCache and Verifier v1.2, deployed on
 Bradbury on 2026-09-26 and now the current production layer. Sections 3 and
 4 describe Registry v1 and Verifier v1.1, the previous versions, which stay
-live.
+live. Section 10 describes the pattern Extractor, which is built and tested
+but not deployed.
 
 The key words MUST, MUST NOT, SHOULD and SHOULD NOT in section 5 are to be
 read as described in RFC 2119.
@@ -24,7 +25,7 @@ consumer to talk to another one.
 | KeyCache | deployed, current | What RSA key a domain published under a selector, and whether it is `pending`, `active`, `rotated` or `retired`. |
 | Verifier | deployed, v1.2 current | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
 | Registry | deployed, v1, previous version, still live | The key cache and version router that the Router and the KeyCache replace. Verifier v1.1 still reads its keys from it. |
-| Extractors | planned, see section 8 | What a signed body says. They will answer "what does it say". |
+| Extractor | built, not deployed, see section 10 | Whether the body served at a URL is the one a Verifier record's signature committed to, and what the sender's patterns read in it. It answers "what does it say". The second Extractor of section 8 is still a proposal. |
 
 The Router, the KeyCache and Verifier v1.2 split the Registry's two jobs and
 were deployed on Bradbury on 2026-09-26; see section 9 for what changed.
@@ -42,7 +43,8 @@ Which layer a consumer needs:
   only to find that address.
 - **What does it say?** No deployed layer answers this today. A Verifier
   record carries the hooks an Extractor needs (`bh` and `body_canon`, see
-  section 4), but the Verifier never reads a body.
+  section 4), but the Verifier never reads a body. The pattern Extractor of
+  section 10 uses them and is not deployed yet.
 - **What key did this domain publish, and may it be used?** The KeyCache,
   through `key_status`.
 
@@ -830,7 +832,8 @@ change.
 - **Extractors (proposal).** Two separate Extractor contracts, one using
   patterns and one reading with a model, each behind its own selector, so
   that a flaw in one cannot affect the other. Each record says which method
-  produced it.
+  produced it. The pattern Extractor is built and described in section 10,
+  and is not deployed; the other one is still a proposal.
 - **Build provenance (proposal).** The library version and hash recorded for
   every deployment.
 - **Deploy provenance (in place).** `tools/deploy.py` checks the working
@@ -978,7 +981,68 @@ does not change the record, so a consumer that releases value reads
 - The Router emits no event for a pending change: it is state, read through
   `pending(name)`, as every Lacre pointer has been.
 
-## 10. Related work
+## 10. Extractor, schema version 1 (built, not deployed)
+
+Source: `contracts/extractor/extractor_template.py`, with `lacre/dkimbody.py`
+and `lacre/patterns.py` spliced in by `contracts/extractor/build.py`. Built
+and tested against the stubbed SDK; **not deployed**, and not registered on
+the Router. It is meant to be registered under the name `extractor`. The
+design notes, the full refusal and reason tables and the patterns document
+format are in [docs/extractor.md](extractor.md).
+
+**Interface.** `extract(record_id, body_url)`, payable, returns a record id
+or a refusal reason and never raises. `set_patterns(domain, patterns_json)`
+is owner only. The views are `get_record(id)`, `count()`,
+`records_of(requester)`, `last_refusal(requester)`, `fee()`, `treasury()`,
+`owner()`, `pending_owner()`, `pending_treasury()`, `router()`,
+`patterns(domain)` and `patterns_sha256(domain)`. Fee, refund, treasury,
+ownership and `withdraw` follow Verifier v1.2 (section 4.3 and section 9).
+The constructor takes the Router address; the Verifier is resolved with
+`resolve("verifier")` on every call, read at `LATEST_FINAL` and never stored.
+
+**Refusals**, in order, each refunded in full by external message and
+recorded in `last_refusal`: `fee not paid`; `router unreadable`,
+`router resolves no verifier`, `verifier unreadable`; `record not found`,
+`record not valid`, `record not aligned`, `body canonicalization not
+supported`; `no patterns for domain`; `url not allowed`.
+
+**Agreement.** Validators agree under `strict_eq` on
+`match|shipped|eta_day|eta_date|order_id_found|patterns_sha256|reason`.
+Every outcome past the refusals is a stored record that keeps the fee,
+`match` false included, as a `valid` false record does on the Verifier.
+
+**Record, schema version 1.** `get_record(id)` returns `id`,
+`schema_version` (`"1"`), `verifier`, `record_id`, `domain`, `bh`, `match`,
+`reason`, `method` (`"patterns"`), `patterns_sha256`, `shipped`, `eta_day`,
+`eta_date`, `order_id_found`, `signed_at`, `requester`, `extracted_at` and
+`fee_paid`. Booleans are booleans, addresses hex strings, everything else a
+string.
+
+**What `match` true with `reason` `extracted` guarantees**, when the record
+was written:
+
+- the Verifier the Router resolved held a record with that id, `valid` and
+  `aligned` true, and `body_canon` `simple` or `relaxed`;
+- every agreeing validator fetched a body of at most 262 144 bytes whose
+  SHA-256 under that canonicalization equals the record's `bh`, which is the
+  `bh=` the signature covered;
+- `shipped`, `eta_day`, `eta_date` and `order_id_found` are what the
+  document with SHA-256 `patterns_sha256` reads in the first `text/plain`
+  part of that body, under the rules of docs/extractor.md.
+
+**What it does not guarantee.**
+
+- That the body is true. It is what the sender signed.
+- Anything the patterns do not encode. The owner writes them, and a record
+  is only as good as the document its `patterns_sha256` names.
+- The Verifier record's current state, the key's current state, the
+  requester's identity or the domain a consumer wants: read the Verifier
+  record the Extractor record names and apply section 5 to it.
+- Uniqueness. The same body can be extracted any number of times.
+- The order number. It is never stored, hashed or logged; only whether an
+  expression found one.
+
+## 11. Related work
 
 **ZK Email** (Ethereum). The user generates a zero-knowledge proof off
 chain, and a contract verifies it against a DKIM key registry. Keys in that
