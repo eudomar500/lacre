@@ -37,8 +37,10 @@ DNS.
 ### Version pointers
 
 `versions` maps a name to an address. One name is in use, `verifier`;
-`extractor` is reserved for the planned Extractor, which is not deployed,
-and the map takes any other name a later contract needs. Names are
+`extractor` was reserved here and never set. The Extractor, deployed on
+2026-09-28, is resolved through the Router instead
+([docs/router.md](router.md)). The map takes any other name a later contract
+needs. Names are
 lowercased and are limited to letters, digits, `-`, `.` and `_`.
 
 - `set_version(name, address) -> str` is owner only and returns the stored

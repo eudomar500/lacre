@@ -30,8 +30,8 @@ kept this small: nothing about keys, DNS, fees or attestations is in it.
 
 ## What it stores
 
-One entry per name. The names in use are `keycache` and `verifier`, and
-`extractor` is reserved; any other name a later contract needs is accepted.
+One entry per name. The names in use are `keycache`, `verifier` and, since
+2026-09-28, `extractor`; any other name a later contract needs is accepted.
 Names and version labels are normalized the way the Registry normalizes
 names: trimmed, lowercased, leading and trailing dots removed, at most 63
 characters of `a-z`, `0-9`, `-`, `.` and `_`. Anything else normalizes to the

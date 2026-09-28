@@ -7,8 +7,8 @@ deployed. Section 8 describes what is planned and is a proposal only.
 Section 9 describes the Router, the KeyCache and Verifier v1.2, deployed on
 Bradbury on 2026-09-26 and now the current production layer. Sections 3 and
 4 describe Registry v1 and Verifier v1.1, the previous versions, which stay
-live. Section 10 describes the pattern Extractor, which is built and tested
-but not deployed.
+live. Section 10 describes the pattern Extractor, deployed on Bradbury on
+2026-09-28 and current.
 
 The key words MUST, MUST NOT, SHOULD and SHOULD NOT in section 5 are to be
 read as described in RFC 2119.
@@ -25,7 +25,7 @@ consumer to talk to another one.
 | KeyCache | deployed, current | What RSA key a domain published under a selector, and whether it is `pending`, `active`, `rotated` or `retired`. |
 | Verifier | deployed, v1.2 current | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
 | Registry | deployed, v1, previous version, still live | The key cache and version router that the Router and the KeyCache replace. Verifier v1.1 still reads its keys from it. |
-| Extractor | built, not deployed, see section 10 | Whether the body served at a URL is the one a Verifier record's signature committed to, and what the sender's patterns read in it. It answers "what does it say". The second Extractor of section 8 is still a proposal. |
+| Extractor | deployed, v1 current, see section 10 | Whether the body served at a URL is the one a Verifier record's signature committed to, and what the sender's patterns read in it. It answers "what does it say". The second Extractor of section 8 is still a proposal. |
 
 The Router, the KeyCache and Verifier v1.2 split the Registry's two jobs and
 were deployed on Bradbury on 2026-09-26; see section 9 for what changed.
@@ -41,10 +41,13 @@ Which layer a consumer needs:
 - **Who sent this?** The Verifier, through `check_for`. A consumer that
   already holds a Verifier address needs nothing else. It uses the Router
   only to find that address.
-- **What does it say?** No deployed layer answers this today. A Verifier
-  record carries the hooks an Extractor needs (`bh` and `body_canon`, see
-  section 4), but the Verifier never reads a body. The pattern Extractor of
-  section 10 uses them and is not deployed yet.
+- **What does it say?** The Extractor, through `get_record`, once its
+  `match` is true and its `reason` is `extracted`. `resolve("extractor")` on
+  the Router returns it. It checks the body served at a URL against the `bh`
+  and `body_canon` of a Verifier record, which the Verifier itself never
+  checks, and reads fields out of it with the sender's patterns (section
+  10). A consumer still applies the Verifier's rules to the Verifier record
+  the Extractor record names.
 - **What key did this domain publish, and may it be used?** The KeyCache,
   through `key_status`.
 
@@ -61,7 +64,8 @@ transactions come from [docs/registry.md](registry.md),
 
 **The integrator entry point is the Router,
 `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`.** Everything current is
-reached through it: `resolve("verifier")` and `resolve("keycache")`. A
+reached through it: `resolve("verifier")`, `resolve("keycache")` and
+`resolve("extractor")`. A
 consumer that pins a reviewed contract uses `resolve_pinned(name, version)`
 or keeps the address itself (section 9).
 
@@ -70,6 +74,7 @@ or keeps the address itself (section 9).
 | Router | - | current, the public address | `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9` | `0x86ae441073d12b9fe8f2d87ed7a78a8e8967b2640acd09607df72722925793b7` | 2026-09-26 20:53 |
 | KeyCache | label `v1` | current, `resolve("keycache")` | `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251` | `0x5cbfc8e992abff50c1b5bd383feea66316326b34ce23104036c39123d83af51b` | 2026-09-26 20:54 |
 | Verifier | v1.2, label `v1.2` | current, `resolve("verifier")` | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | `0xf4a587ea3db13ef10f38fa2ce78a917e052f38c9aa0ac661c7a8f0fa26b15121` | 2026-09-26 20:56 |
+| Extractor | v1, label `v1` | current, `resolve("extractor")` | `0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5` | `0xec9882caf5a9bb3dfdbcebceeec72c3f88a128f4c2078ab259061ddbffbb5afc` | 2026-09-28 14:26 |
 | Registry | v1 | previous version, still live | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | `0x88e06a33bfd5c35dabe4ef49bb0cd69a208eed942dca60576bc08bed6e275058` | 2026-09-23 14:14 |
 | Registry | v0 | retired, nothing points at it | `0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e` | `0xf6884c48f915c659362cf1a820d84f89e145f9bbd1062e8ab7f5fa4c40225034` | 2026-09-22 |
 | Verifier | v1.1 | previous version, still live, Registry v1 `version("verifier")` | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 2026-09-23 16:01 |
@@ -81,8 +86,9 @@ accepted.
 
 Verifier v1 and v1.1 were deployed with Registry v1 as their constructor
 argument. Verifier v1.2 was deployed with the Router as its constructor
-argument, and `router()` on it returns the Router address. The version
-labels are the ones the Router's `history(name)` returns.
+argument, and `router()` on it returns the Router address, as it does on
+Extractor v1. The version labels are the ones the Router's `history(name)`
+returns.
 
 Every contract entry in `deployments.json`, the two value probes aside,
 carries the commit its source came from and the SHA-256 of the exact source
@@ -167,6 +173,51 @@ written through the gateway:
 | `requester` | `0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561` |
 
 `records_of("0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561")` returns `[0]`.
+
+**Extractor v1.** Deployed on 2026-09-28 by `tools/deploy.py` from a clean
+tree, with the Router as its constructor argument, and recorded at deploy
+time in `deployments.json`:
+
+| contract | commit | source SHA-256 | source size | node's deploy gas estimate | L2 gas used by the deploy |
+|----------|--------|----------------|-------------|----------------------------|---------------------------|
+| Extractor v1 | `3fac3d99dfee180ac6a7d22a149ba58897806940` | `f7ab0bb1e6b21b822f15cde213a7a659274b5c15c478c95afd61cb59b4c0b1be` | 12 878 bytes | 10 993 662, 65.5% of 2^24 | 10 329 425 |
+
+The estimate is the one `tools/deploy.py` printed at deploy time, and the
+deploy reached ACCEPTED with AGREE. It inlines `lacre/dkimbody.py` at
+`56360e2fe6a2845830d603cd254aedf4524d2bfcb998472c716ceb9c177e6916` and
+`lacre/patterns.py` at
+`f6a909fe5bd7e09172a5acdd2f38376a01fa915147d65544728a148b91e65d4c`. Once it
+was FINALIZED:
+
+| call | contract | consensus tx | L2 gas used | result |
+|------|----------|--------------|-------------|--------|
+| `set_patterns("amazon.com", <lacre/extractors/amazon.json>)` | Extractor v1 | `0x31364f2174b7566278a3e00e9c34cce87fb9f25adfdbe5eec06f5691322cf7ca` | 960 433 | AGREE in 21 s |
+| `set_version("extractor", "v1", "0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5")` | Router | `0x1d42c58d66a70aca39e499dba91923ca30978651952f36f662edb190402e10b4` | 860 565 | AGREE in 21 s, the name's first assignment, so immediate |
+
+`patterns_sha256("amazon.com")` returns
+`cac2e3e03cda9a9d2deaae6b44ac957591dbed44ba58e23ab0fd10684e218530`. The
+Extractor's fee is 0. Its first three records were written by
+`0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53` against Verifier v1.2 record
+`0`, each with `fee_paid` 0, and `records_of` for that address returns
+`[0, 1, 2]`:
+
+| record | consensus tx | `match` | `reason` |
+|--------|--------------|---------|----------|
+| 0 | `0xfe3dc83acb76aa7c069c850b945480f5e7948c156ccfd7dc0a14a2ac9e1fe6c1` | false | `body HTTP 404` |
+| 1 | `0x95543b08ac125619359b152a2fec4030e6316b68c36b2b009cd33d482d266ce9` | false | `body HTTP 404` |
+| 2 | `0x69d689f9f05a48e3ae1c6fd817b3de9f6c5d67b740dc173585caa368c0365f28` | true | `extracted` |
+
+Records 0 and 1 are the documented error path, measured: the body URL was
+not served (a tunnel that did not route static files, and for record 1 a
+wrong URL), every validator got 404, and each call stored a charged record
+with every field empty. Record 2 was submitted 2026-09-28 15:33:27 UTC,
+ACCEPTED 10 seconds later with 5 of 5 AGREE in one round, and FINALIZED
+about 30 minutes later, with 851 123 L2 gas used. Its agreed string is
+`1|1|miercoles||1|cac2e3e0...8530|extracted`, and it reads `shipped` true,
+`eta_day` `miercoles`, `eta_date` empty, `order_id_found` true, `signed_at`
+1790011067, `schema_version` 1, `method` `patterns` and `verifier`
+`0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed`. The full record is in
+[docs/extractor.md](extractor.md#deployments).
 
 Other transactions on the previous versions an integrator may want to
 check:
@@ -577,8 +628,8 @@ of the following were true when the record was written:
 6. A consumer MUST NOT read `requester` as proof that the requester
    received the message. It proves only who paid for the check.
 7. A consumer that needs the body to say something MUST verify the body
-   itself against `bh` and `body_canon`, or wait for an Extractor. A `valid`
-   record makes no statement about the body.
+   itself against `bh` and `body_canon`, or rely on an Extractor record for
+   it (section 10). A `valid` record makes no statement about the body.
 8. A consumer that releases goods or money on an attestation MUST read the
    key's current status at decision time: from the KeyCache (`state`, which
    must be `active`) for a Verifier v1.2 record, from the Registry
@@ -757,7 +808,9 @@ Bradbury on 24 September 2026, measured the design it will use:
   resolves (section 9).
 - **Public calldata on the inline path.** Every header in the blob is public
   permanently. The URL path puts the URL in public calldata as well.
-- **No body verification in any deployed layer.** Section 4.7.
+- **No body verification in the Verifier.** Section 4.7. The body is
+  checked against `bh` only by the Extractor (section 10), and only for a
+  domain it holds patterns for.
 - **First registration is permanent.** Whoever calls `register_key` first
   for a selector stores whatever both resolvers return at that moment, and
   the key fields never change afterwards. The precondition for an attack is
@@ -832,8 +885,8 @@ change.
 - **Extractors (proposal).** Two separate Extractor contracts, one using
   patterns and one reading with a model, each behind its own selector, so
   that a flaw in one cannot affect the other. Each record says which method
-  produced it. The pattern Extractor is built and described in section 10,
-  and is not deployed; the other one is still a proposal.
+  produced it. The pattern Extractor was deployed on 2026-09-28 and is
+  described in section 10; the other one is still a proposal.
 - **Build provenance (proposal).** The library version and hash recorded for
   every deployment.
 - **Deploy provenance (in place).** `tools/deploy.py` checks the working
@@ -981,14 +1034,20 @@ does not change the record, so a consumer that releases value reads
 - The Router emits no event for a pending change: it is state, read through
   `pending(name)`, as every Lacre pointer has been.
 
-## 10. Extractor, schema version 1 (built, not deployed)
+## 10. Extractor, schema version 1
 
 Source: `contracts/extractor/extractor_template.py`, with `lacre/dkimbody.py`
-and `lacre/patterns.py` spliced in by `contracts/extractor/build.py`. Built
-and tested against the stubbed SDK; **not deployed**, and not registered on
-the Router. It is meant to be registered under the name `extractor`. The
-design notes, the full refusal and reason tables and the patterns document
-format are in [docs/extractor.md](extractor.md).
+and `lacre/patterns.py` spliced in by `contracts/extractor/build.py`.
+**Extractor v1 is deployed on Bradbury at
+`0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5` and current**: the Router
+resolves `extractor` to it with label `v1`, set by `set_version("extractor",
+"v1", "0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5")` on 2026-09-28, the
+name's first assignment, which took effect at once. It holds patterns for
+amazon.com, with `patterns_sha256`
+`cac2e3e03cda9a9d2deaae6b44ac957591dbed44ba58e23ab0fd10684e218530`. Section 2
+has the deploy transaction, the wiring and the first records. The design
+notes, the full refusal and reason tables and the patterns document format
+are in [docs/extractor.md](extractor.md).
 
 **Interface.** `extract(record_id, body_url)`, payable, returns a record id
 or a refusal reason and never raises. `set_patterns(domain, patterns_json)`

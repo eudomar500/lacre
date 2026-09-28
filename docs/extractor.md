@@ -6,10 +6,11 @@ takes the id of a Verifier record and the URL of the message body, checks
 that the body served there is the one the DKIM signature committed to, reads
 a few fields out of it with the sender's patterns, and stores a record.
 
-**Status: built and tested against the stubbed SDK, not deployed.** It is
-meant to be registered on the Router under the name `extractor`. No address
-exists yet; `tools/extract.py` stops with "the Router resolves no extractor"
-until one does.
+**Status: v1 deployed on Bradbury on 2026-09-28, at
+`0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5`, and current.** The Router
+resolves `extractor` to it with label `v1`, the amazon.com patterns are set,
+and record 2 is the first extraction that matched a signed body. See
+[Deployments](#deployments).
 
 Source: `contracts/extractor/extractor_template.py`, with
 `lacre/dkimbody.py` and `lacre/patterns.py` spliced in by
@@ -350,8 +351,8 @@ splice makes redundant and a second `import hashlib` and `import re`, and
 strips full-line comments, as the other builds do. It then rewrites
 indentation to one space per level and drops blank lines, and refuses the
 result unless it parses to the same syntax tree as the input. That step is
-new: the request put the source under 13 000 bytes, and with comments
-stripped alone the contract was 15 222 bytes. The template and the modules
+new: the source had to fit under 13 000 bytes, and with comments stripped
+alone the contract was 15 222 bytes. The template and the modules
 keep normal indentation and are where the code is read.
 
 Built on 2026-09-28: 12 878 bytes, under the 13 000 byte cap. The node's
@@ -368,4 +369,117 @@ so it says nothing about either.
 A deploy also needs, after it is FINALIZED: `set_patterns("amazon.com",
 <amazon.json>)` from the owner, a check that `patterns_sha256("amazon.com")`
 prints what `extract_check.py` printed, and `set_version("extractor", <label>,
-<address>)` on the Router. None of that has been done.
+<address>)` on the Router. For v1 all three were done on 2026-09-28; see
+[Deployments](#deployments).
+
+## Serving a body
+
+The body has to be reachable by the validators at the exact URL passed to
+`extract`, from outside the machine that serves it, until the transaction is
+FINALIZED. A body behind a proxy or a tunnel is only reachable if the proxy
+routes that path to the file; a tunnel that forwards the host but not static
+files answers 404 to every validator. The Extractor does not refuse such a
+call, because it cannot know before fetching: every validator gets the error,
+they agree on it, and the result is a stored, charged record with `match`
+false and reason `body HTTP <status>`. That reason is the signal. The charged
+record is the cost of not checking the URL first, so fetch it before sending,
+from a machine outside the tunnel:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code} %{size_download}\n' https://<host>/<path>
+```
+
+It has to print `200` and the body's byte count, and the body has to hash to
+the record's `bh` (`tools/extract_check.py` computes it from the .eml).
+Records 0 and 1 on v1 are what the other outcome looks like.
+
+## Deployments
+
+`deployments.json` at the repository root holds the `extractor` entry,
+written by `tools/deploy.py`. The deploy is on Bradbury.
+
+| version | address | deploy consensus tx | deploy gas | source | status |
+|---------|---------|---------------------|------------|--------|--------|
+| v1 | `0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5` | `0xec9882caf5a9bb3dfdbcebceeec72c3f88a128f4c2078ab259061ddbffbb5afc` | 10 329 425 used of 10 993 662 estimated, AGREE | 12 878 bytes | current, the Router's `resolve("extractor")` |
+
+### v1
+
+v1 was deployed by `tools/deploy.py` on 2026-09-28 (`deployed_at`
+`2026-09-28T14:26:58+00:00`) from a clean tree at commit
+`3fac3d99dfee180ac6a7d22a149ba58897806940`, source SHA-256
+`f7ab0bb1e6b21b822f15cde213a7a659274b5c15c478c95afd61cb59b4c0b1be`, with
+`lacre/dkimbody.py` at
+`56360e2fe6a2845830d603cd254aedf4524d2bfcb998472c716ceb9c177e6916` and
+`lacre/patterns.py` at
+`f6a909fe5bd7e09172a5acdd2f38376a01fa915147d65544728a148b91e65d4c` inlined,
+all as recorded in `deployments.json`. Its constructor argument is the
+Router `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which `router()`
+returns. The node estimated 10 993 662 gas at deploy time, 65.5 percent of
+the 2^24 cap, below the 11 176 279 of the earlier `--estimate-only` run for
+the same source; the deploy used 10 329 425 gas on L2 and was ACCEPTED with
+AGREE.
+
+After it was FINALIZED:
+
+| call | contract | consensus tx | L2 gas used | result |
+|------|----------|--------------|-------------|--------|
+| `set_patterns("amazon.com", <lacre/extractors/amazon.json>)` | Extractor v1 | `0x31364f2174b7566278a3e00e9c34cce87fb9f25adfdbe5eec06f5691322cf7ca` | 960 433 | AGREE in 21 s |
+| `set_version("extractor", "v1", "0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5")` | Router | `0x1d42c58d66a70aca39e499dba91923ca30978651952f36f662edb190402e10b4` | 860 565 | AGREE in 21 s |
+
+`patterns_sha256("amazon.com")` returns
+`cac2e3e03cda9a9d2deaae6b44ac957591dbed44ba58e23ab0fd10684e218530`, the
+digest `tools/extract_check.py` prints for `lacre/extractors/amazon.json`.
+`extractor` was a new name on the Router, so the assignment took effect at
+once, without the 48 hour delay ([docs/router.md](router.md#the-delay)). The
+fee is 0.
+
+**Records.** All three were written by
+`0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53` against record 0 of Verifier
+v1.2, with a fee of 0, and `records_of` for that requester returns
+`[0, 1, 2]`.
+
+| record | consensus tx | match | reason | fields |
+|--------|--------------|-------|--------|--------|
+| 0 | `0xfe3dc83acb76aa7c069c850b945480f5e7948c156ccfd7dc0a14a2ac9e1fe6c1` | false | `body HTTP 404` | all empty |
+| 1 | `0x95543b08ac125619359b152a2fec4030e6316b68c36b2b009cd33d482d266ce9` | false | `body HTTP 404` | all empty |
+| 2 | `0x69d689f9f05a48e3ae1c6fd817b3de9f6c5d67b740dc173585caa368c0365f28` | true | `extracted` | as below |
+
+Records 0 and 1 are the fetch error path, measured on chain, and behave as
+documented in [extract](#extract): the body URL answered 404 to every
+validator, the validators agreed on that, and the call wrote a charged record
+with `match` false and every field empty instead of reverting or refusing.
+The body was not served: the domain sits behind a cloudflared tunnel whose
+ingress did not route static files at the time, and record 1 was also sent
+with the wrong URL. See [Serving a body](#serving-a-body).
+
+Record 2 is the first extraction that matched. It was submitted at
+2026-09-28 15:33:27 UTC, ACCEPTED 10 seconds later with 5 of 5 validators
+agreeing in one round, and FINALIZED about 30 minutes later. It used 851 123
+gas on L2. The validators agreed on
+
+    1|1|miercoles||1|cac2e3e03cda9a9d2deaae6b44ac957591dbed44ba58e23ab0fd10684e218530|extracted
+
+which is the string `tools/extract_check.py` prints for the same message and
+document, and the stored record reads:
+
+| field | value |
+|-------|-------|
+| `schema_version` | 1 |
+| `method` | `patterns` |
+| `verifier` | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` |
+| `record_id` | 0 |
+| `match` | true |
+| `reason` | `extracted` |
+| `shipped` | true |
+| `eta_day` | `miercoles` |
+| `eta_date` | empty |
+| `order_id_found` | true |
+| `signed_at` | 1790011067 |
+| `patterns_sha256` | `cac2e3e03cda9a9d2deaae6b44ac957591dbed44ba58e23ab0fd10684e218530` |
+| `requester` | `0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53` |
+| `fee_paid` | 0 |
+
+The fields are the ones the body probe read from the same message on
+Bradbury on 2026-09-22; `eta_date` is empty because `amazon.json` has no date
+expression. The requester is not the requester of the Verifier record, which
+is allowed (see [Security notes](#security-notes)).

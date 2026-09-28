@@ -13,9 +13,10 @@ No message body reaches calldata or storage, and storage holds only the
 record: no address, To or Subject, and of the From header only its domain.
 Calldata is public: `attest_inline` puts every header in the blob in calldata
 permanently, and `attest` puts the blob's URL there, so anyone can fetch the
-headers while they are served. The Verifier checks the headers only; no
-deployed contract checks what a body says. See
-[docs/interfaces.md](docs/interfaces.md), section 6.
+headers while they are served. The Verifier checks the headers only; the
+Extractor checks a body against the `bh` of a Verifier record and reads a few
+fields out of it. See [docs/interfaces.md](docs/interfaces.md), sections 6
+and 10.
 
 The repository holds three things. The DKIM probes are the evidence that the
 check itself works. `experiments/dkim-probe/` is the off-chain verifier: pure
@@ -37,16 +38,23 @@ the internal message path moves zero wei to a wallet and reports no error.
 
 The production layer on Bradbury was redeployed on 2026-09-26. Its public
 address is the Router in `contracts/router/`, at
-`0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which resolves `verifier` and
-`keycache` to the current contracts and puts a 48 hour delay on any later
-change. The KeyCache in `contracts/keycache/`, at
+`0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which resolves `verifier`,
+`keycache` and `extractor` to the current contracts and puts a 48 hour delay
+on any later change. The KeyCache in `contracts/keycache/`, at
 `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`, holds the DKIM keys and makes
 each new one wait out a 24 hour quarantine before it can be used; the
 amazon.com key was registered there on 2026-09-26 and has been active since
 `confirm_key` on 2026-09-27. Verifier v1.2 in `contracts/verifier/`, at
 `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed`, turns a DKIM signature into the
 record described above, reads its keys from the KeyCache through the Router,
-and only attests against an active key.
+and only attests against an active key. The pattern Extractor in
+`contracts/extractor/`, at `0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5`,
+deployed on 2026-09-28 and resolved by the Router as `extractor`, takes a
+Verifier record and the URL of the message body, checks the body against the
+record's `bh`, and stores what the sender's patterns read in it: whether it
+shipped, the weekday it arrives, a date when the text carries one, and
+whether an order number is present, never the number itself. See
+[docs/extractor.md](docs/extractor.md).
 
 The previous versions stay live. Registry v1, at
 `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc`, holds the amazon.com key and
@@ -66,8 +74,6 @@ and
 
 The interface of every layer, for integrators and reviewers, is in [docs/interfaces.md](docs/interfaces.md).
 
-The pattern Extractor in `contracts/extractor/` exists and is not deployed yet: it checks a body against the `bh` of a Verifier record and reads fields out of it with per-sender patterns. See [docs/extractor.md](docs/extractor.md).
-
 ## Tools
 
 `tools/` holds the production scripts: `deploy.py`, `call.py`, `read.py`,
@@ -85,7 +91,11 @@ a failed read, stops it with the consensus tx id and nothing more is sent.
 Each outcome has its own exit code, listed in the script. The rules it
 follows are in [docs/interfaces.md](docs/interfaces.md), section 5.
 
-Status: research probes plus the Router, the KeyCache and the Verifier on a
-testnet, with the previous Registry and Verifier still live beside them.
-The amazon.com key is active on the KeyCache, and Verifier v1.2 holds its
-first record, written on 2026-09-27 and finalized.
+Status: research probes plus the Router, the KeyCache, the Verifier and the
+Extractor on a testnet, with the previous Registry and Verifier still live
+beside them. The amazon.com key is active on the KeyCache, and Verifier v1.2
+holds its first record, written on 2026-09-27 and finalized. The Extractor is
+deployed with the amazon.com patterns set, and holds its first record that
+matched a signed body, record 2, written against that Verifier record on
+2026-09-28 and finalized; records 0 and 1 before it are charged records of a
+body URL that answered 404.
