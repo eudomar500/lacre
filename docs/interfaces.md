@@ -9,7 +9,7 @@ Bradbury on 2026-09-26 and now the current production layer. Sections 3 and
 4 describe Registry v1 and Verifier v1.1, the previous versions, which stay
 live. Section 10 describes the pattern Extractor, deployed on Bradbury on
 2026-09-28 and current. Section 11 describes the LLM Extractor, the
-model-reading lane, which is built and not deployed.
+model-reading lane, deployed on Bradbury on 2026-09-28 and current.
 
 The key words MUST, MUST NOT, SHOULD and SHOULD NOT in section 5 are to be
 read as described in RFC 2119.
@@ -27,7 +27,7 @@ consumer to talk to another one.
 | Verifier | deployed, v1.2 current | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
 | Registry | deployed, v1, previous version, still live | The key cache and version router that the Router and the KeyCache replace. Verifier v1.1 still reads its keys from it. |
 | Extractor | deployed, v1 current, see section 10 | Whether the body served at a URL is the one a Verifier record's signature committed to, and what the sender's patterns read in it. It answers "what does it say" for senders with a patterns document. |
-| LLM Extractor | built, not deployed, see section 11 | The same body check, with the reading done by each validator's model through a hardened prompt, for senders with no patterns. It answers "what does it say" where the pattern Extractor cannot. |
+| LLM Extractor | deployed, v1 current, see section 11 | The same body check, with the reading done by each validator's model through a hardened prompt, for senders with no patterns. It answers "what does it say" where the pattern Extractor cannot. |
 
 The Router, the KeyCache and Verifier v1.2 split the Registry's two jobs and
 were deployed on Bradbury on 2026-09-26; see section 9 for what changed.
@@ -50,7 +50,7 @@ Which layer a consumer needs:
   the same field set, told apart by `method`. The pattern lane,
   `resolve("extractor")` on the Router, reads fields with the sender's
   patterns (section 10) and refuses a sender that has none. The model lane,
-  `resolve("extractor_llm")` once it is deployed, takes any sender and has
+  `resolve("extractor_llm")` on the Router, takes any sender and has
   each validator's model read `shipped` and `eta_day` through the prompt
   probe D2 measured (section 11). A consumer still applies the Verifier's
   rules to the Verifier record the Extractor record names.
@@ -70,8 +70,8 @@ transactions come from [docs/registry.md](registry.md),
 
 **The integrator entry point is the Router,
 `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`.** Everything current is
-reached through it: `resolve("verifier")`, `resolve("keycache")` and
-`resolve("extractor")`. A
+reached through it: `resolve("verifier")`, `resolve("keycache")`,
+`resolve("extractor")` and `resolve("extractor_llm")`. A
 consumer that pins a reviewed contract uses `resolve_pinned(name, version)`
 or keeps the address itself (section 9).
 
@@ -81,6 +81,7 @@ or keeps the address itself (section 9).
 | KeyCache | label `v1` | current, `resolve("keycache")` | `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251` | `0x5cbfc8e992abff50c1b5bd383feea66316326b34ce23104036c39123d83af51b` | 2026-09-26 20:54 |
 | Verifier | v1.2, label `v1.2` | current, `resolve("verifier")` | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | `0xf4a587ea3db13ef10f38fa2ce78a917e052f38c9aa0ac661c7a8f0fa26b15121` | 2026-09-26 20:56 |
 | Extractor | v1, label `v1` | current, `resolve("extractor")` | `0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5` | `0xec9882caf5a9bb3dfdbcebceeec72c3f88a128f4c2078ab259061ddbffbb5afc` | 2026-09-28 14:26 |
+| LLM Extractor | v1, label `v1` | current, `resolve("extractor_llm")` | `0xCC095f05Dbb55a339Fe126F3AF879224487371d6` | `0xfea32ba5800dbda1084ef2b2aee89f6cefd1b0b55e03634b7f19c22ac27b364d` | 2026-09-28 18:47 |
 | Registry | v1 | previous version, still live | `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc` | `0x88e06a33bfd5c35dabe4ef49bb0cd69a208eed942dca60576bc08bed6e275058` | 2026-09-23 14:14 |
 | Registry | v0 | retired, nothing points at it | `0xd9C6a6A0942490880BfF1405d8746AFC3e55d85e` | `0xf6884c48f915c659362cf1a820d84f89e145f9bbd1062e8ab7f5fa4c40225034` | 2026-09-22 |
 | Verifier | v1.1 | previous version, still live, Registry v1 `version("verifier")` | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 2026-09-23 16:01 |
@@ -768,10 +769,10 @@ What remains on chain besides the record depends on the path:
   URL is public in calldata from the moment the transaction is submitted, so
   anyone who reads the chain can fetch the headers while they are served.
 
-### 6.1 The model-reading lane (measured, built, not deployed)
+### 6.1 The model-reading lane (measured, deployed)
 
-No model-reading lane is deployed. It is built as the LLM Extractor,
-section 11. Probe D2
+The model-reading lane is the LLM Extractor, deployed on Bradbury on
+2026-09-28 (section 11). Probe D2
 ([experiments/llm-probe-2](../experiments/llm-probe-2/README.md)), run on
 Bradbury on 24 September 2026, measured the design it uses:
 
@@ -806,8 +807,9 @@ Bradbury on 24 September 2026, measured the design it uses:
   closed the prompt's delimiter early and planted its own instructions
   changed the reading in both equivalence modes, and all validators agreed
   on the wrong answer (5 of 5 AGREE in strict mode). Consensus does not
-  protect against an attack that works on every validator's model. No
-  model-reading lane is deployed.
+  protect against an attack that works on every validator's model. The
+  deployed model-reading lane, the LLM Extractor (section 11), builds its
+  prompt the way probe D2 measured against that attack (section 6.1).
 - **Validator timeouts.** In the same probe, 6 of 50 final-round validator
   votes were TIMEOUT, three of ten transactions took extra rounds, and one
   took 175 seconds to reach ACCEPTED. A timeout is not a disagreement, but
@@ -897,7 +899,7 @@ change.
   patterns and one reading with a model, each behind its own selector, so
   that a flaw in one cannot affect the other. Each record says which method
   produced it. The pattern Extractor was deployed on 2026-09-28 and is
-  described in section 10; the LLM Extractor is built and not deployed, and
+  described in section 10; the LLM Extractor was deployed on 2026-09-28 and
   is described in section 11.
 - **Build provenance (proposal).** The library version and hash recorded for
   every deployment.
@@ -1117,11 +1119,18 @@ was written:
 
 Source: `contracts/llmextractor/llmextractor_template.py`, with
 `lacre/dkimbody.py` and `lacre/llmfields.py` spliced in by
-`contracts/llmextractor/build.py`. **Built and tested against the stubbed
-SDK, not deployed**: it has no address, the Router has no `extractor_llm`
-entry, and `deployments.json` has no entry for it. The design notes, the
-prompt, the prefilter and the full reason table are in
-[docs/llmextractor.md](llmextractor.md).
+`contracts/llmextractor/build.py`. **LLM Extractor v1 is deployed on
+Bradbury at `0xCC095f05Dbb55a339Fe126F3AF879224487371d6` and current**: the
+Router resolves `extractor_llm` to it with label `v1`, set by
+`set_version("extractor_llm", "v1", "0xCC095f05Dbb55a339Fe126F3AF879224487371d6")`
+on 2026-09-28 (consensus tx
+`0x455eb6c5ed88443b219c12c69d5d2c0c43e1411c8f9b3d150c6c578a5e89c744`), the
+name's first assignment, which took effect at once. Its first record,
+record 0, read the amazon.com body the pattern Extractor read in its record
+2 and stored the same `shipped` and `eta_day`. The deploy provenance, the
+wiring and the record are in
+[docs/llmextractor.md](llmextractor.md#deployments), with the design notes,
+the prompt, the prefilter and the full reason table.
 
 **Interface.** `extract(record_id, body_url)`, payable, returns a record id
 or a refusal reason and never raises. The views are `get_record(id)`,

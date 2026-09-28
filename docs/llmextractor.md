@@ -7,10 +7,11 @@ the URL of the message body, checks that the body served there is the one
 the DKIM signature committed to, and has each validator's model read two
 fields out of it, through the hardened prompt measured by probe D2.
 
-**Status: built and tested against the stubbed SDK, not deployed.** No
-address exists, the Router has no `extractor_llm` entry, and
-`deployments.json` has no entry for it. The deploy estimate is in
-[Building, checking and deploying](#building-checking-and-deploying).
+**Status: v1 deployed on Bradbury on 2026-09-28, at
+`0xCC095f05Dbb55a339Fe126F3AF879224487371d6`, and current.** The Router resolves
+`extractor_llm` to it with label `v1`, and record 0 is its first extraction,
+the same reading the pattern Extractor stored for the same body. See
+[Deployments](#deployments).
 
 Source: `contracts/llmextractor/llmextractor_template.py`, with
 `lacre/dkimbody.py` and `lacre/llmfields.py` spliced in by
@@ -399,6 +400,96 @@ source against Bradbury with the Router
 11 934 088 gas, 71.1 percent of the 2^24 per-transaction cap; the 870 gas
 per byte rule gives 12 082 560, 72.0 percent.
 
+The node estimated 11 748 475 gas for the same source at deploy time
+(see [Deployments](#deployments)).
+
 A deploy also needs, after it is FINALIZED, `set_version("extractor_llm",
-<label>, <address>)` on the Router. `extractor_llm` is a new name there, so
-it takes effect at once.
+<label>, <address>)` on the Router. `extractor_llm` was a new name there, so
+the first assignment took effect at once. For v1 it was done on 2026-09-28.
+
+## Deployments
+
+`deployments.json` at the repository root holds the `llmextractor` entry,
+written by `tools/deploy.py`. The deploy is on Bradbury.
+
+| version | address | deploy consensus tx | deploy gas | source | status |
+|---------|---------|---------------------|------------|--------|--------|
+| v1 | `0xCC095f05Dbb55a339Fe126F3AF879224487371d6` | `0xfea32ba5800dbda1084ef2b2aee89f6cefd1b0b55e03634b7f19c22ac27b364d` | 11 039 175 used of 11 748 475 estimated, AGREE | 13 888 bytes | current, the Router's `resolve("extractor_llm")` |
+
+### v1
+
+v1 was deployed by `tools/deploy.py` on 2026-09-28 (`deployed_at`
+`2026-09-28T18:47:59+00:00`) from a clean tree at commit
+`ee3304d4c2a236610c2fb01b85293797133c9ba0`, source SHA-256
+`aaa256cf6c2c8e0911d0e2fdf8ada0d9fefe72fe679f396b35164dd27ef66842`, with
+`lacre/dkimbody.py` at
+`56360e2fe6a2845830d603cd254aedf4524d2bfcb998472c716ceb9c177e6916` and
+`lacre/llmfields.py` at
+`d6714a2637085cbc217854c6a3688e1a2c588f3f05847ee37bdf91e9c57595ef` inlined,
+all as recorded in `deployments.json`. Its constructor argument is the
+Router `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`. The node estimated
+11 748 475 gas at deploy time, 70.0 percent of the 2^24 cap, below the
+11 934 088 of the earlier `--estimate-only` run for the same source; the
+deploy used 11 039 175 gas on L2 and was ACCEPTED with AGREE.
+
+After it was FINALIZED:
+
+| call | contract | consensus tx | L2 gas used | result |
+|------|----------|--------------|-------------|--------|
+| `set_version("extractor_llm", "v1", "0xCC095f05Dbb55a339Fe126F3AF879224487371d6")` | Router | `0x455eb6c5ed88443b219c12c69d5d2c0c43e1411c8f9b3d150c6c578a5e89c744` | 843 513 | AGREE in 31 s |
+
+`extractor_llm` was a new name on the Router, so the assignment took effect
+at once, without the 48 hour delay ([docs/router.md](router.md#the-delay)).
+The fee is 0 and `prompt_sha256()` returns
+`820e133d5427bf4d9d74f31ea0152efaded593d601928dcf70528e0d432c4509`, the `PROMPT_SHA256` that
+`tools/llm_check.py` prints.
+
+**Record 0.** Written by `0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53`
+against record 0 of the Verifier the Router resolves, Verifier v1.2, with a
+fee of 0. It was submitted at 2026-09-28 19:20:25 UTC, ACCEPTED 39 seconds
+later with AGREE and no leader rotation, and FINALIZED about 30 minutes
+later. It used 843 553 gas on L2.
+
+| call | consensus tx | match | reason | fields |
+|------|--------------|-------|--------|--------|
+| record 0 | `0xd521c24aa97ebbc36af5477fe3ddc72f30c6dd01d78288e71a33e20c933eed7a` | true | `extracted` | as below |
+
+The validators agreed on
+
+    1|1|miercoles|0|extracted
+
+and the stored record reads:
+
+| field | value |
+|-------|-------|
+| `schema_version` | 1 |
+| `method` | `llm` |
+| `record_id` | 0 |
+| `match` | true |
+| `reason` | `extracted` |
+| `shipped` | true |
+| `eta_day` | `miercoles` |
+| `eta_date` | empty, not produced by this lane |
+| `order_id_found` | false, not produced by this lane |
+| `flagged` | false |
+| `signed_at` | 1790011067 |
+| `prompt_sha256` | `820e133d5427bf4d9d74f31ea0152efaded593d601928dcf70528e0d432c4509` |
+| `requester` | `0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53` |
+| `fee_paid` | 0 |
+
+**Two lanes, one answer.** The body is the amazon.com message the pattern
+Extractor read in its record 2, against the same Verifier record. That
+record says `shipped` true and `eta_day` `miercoles` from the owner's
+patterns; this one says the same from the validators' models, which were
+given no patterns and no hint of the sender's wording. The two readings
+were produced by different code and agree on `match`, `shipped` and
+`eta_day`, the fields both lanes produce; `eta_date` and `order_id_found`
+come from the pattern lane only.
+
+**What this measures and what it does not.** Record 0 is the first on-chain
+run of the prompt without the injection question, and it is one call on one
+ordinary body: it shows that the prompt as deployed reads that body and that
+the validators agreed on it in the first round, with no leader rotation. It says nothing about attacks. The
+basis for the attack cases is still probe D2, 40 of 40 correct readings
+over ten synthetic bodies, 32 of them attacks, with the injection question
+in the prompt ([The prompt](#the-prompt)).

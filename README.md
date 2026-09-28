@@ -39,7 +39,7 @@ the internal message path moves zero wei to a wallet and reports no error.
 The production layer on Bradbury was redeployed on 2026-09-26. Its public
 address is the Router in `contracts/router/`, at
 `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which resolves `verifier`,
-`keycache` and `extractor` to the current contracts and puts a 48 hour delay
+`keycache`, `extractor` and `extractor_llm` to the current contracts and puts a 48 hour delay
 on any later change. The KeyCache in `contracts/keycache/`, at
 `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`, holds the DKIM keys and makes
 each new one wait out a 24 hour quarantine before it can be used; the
@@ -55,9 +55,11 @@ record's `bh`, and stores what the sender's patterns read in it: whether it
 shipped, the weekday it arrives, a date when the text carries one, and
 whether an order number is present, never the number itself. See
 [docs/extractor.md](docs/extractor.md). A second lane for senders with no
-patterns, the LLM Extractor in `contracts/llmextractor/`, has each
-validator's model read the same body through the prompt probe D2 measured;
-it is built and tested and not deployed. See
+patterns, the LLM Extractor in `contracts/llmextractor/`, at
+`0xCC095f05Dbb55a339Fe126F3AF879224487371d6`, deployed on 2026-09-28 and
+resolved by the Router as `extractor_llm`, has each validator's model read
+the same body through the prompt probe D2 measured and stores whether it
+shipped and the weekday it arrives. See
 [docs/llmextractor.md](docs/llmextractor.md).
 
 The previous versions stay live. Registry v1, at
@@ -95,11 +97,13 @@ a failed read, stops it with the consensus tx id and nothing more is sent.
 Each outcome has its own exit code, listed in the script. The rules it
 follows are in [docs/interfaces.md](docs/interfaces.md), section 5.
 
-Status: research probes plus the Router, the KeyCache, the Verifier and the
-Extractor on a testnet, with the previous Registry and Verifier still live
-beside them. The amazon.com key is active on the KeyCache, and Verifier v1.2
+Status: research probes plus the Router, the KeyCache, the Verifier and
+both extraction lanes, the pattern Extractor and the LLM Extractor, on a
+testnet, with the previous Registry and Verifier still live beside them. The amazon.com key is active on the KeyCache, and Verifier v1.2
 holds its first record, written on 2026-09-27 and finalized. The Extractor is
 deployed with the amazon.com patterns set, and holds its first record that
 matched a signed body, record 2, written against that Verifier record on
 2026-09-28 and finalized; records 0 and 1 before it are charged records of a
-body URL that answered 404.
+body URL that answered 404. The LLM Extractor holds its first record, record
+0, written against the same Verifier record on 2026-09-28 and finalized,
+with the same reading from the same body: shipped, arriving miercoles.
