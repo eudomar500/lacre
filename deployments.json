@@ -1,5 +1,20 @@
 {
   "bradbury": {
+    "extractor": {
+      "address": "0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5",
+      "commit": "3fac3d99dfee180ac6a7d22a149ba58897806940",
+      "commit_dirty": false,
+      "consensus_tx": "0xec9882caf5a9bb3dfdbcebceeec72c3f88a128f4c2078ab259061ddbffbb5afc",
+      "deployed_at": "2026-09-28T14:26:58+00:00",
+      "inlined_modules": {
+        "dkimbody.py": "56360e2fe6a2845830d603cd254aedf4524d2bfcb998472c716ceb9c177e6916",
+        "patterns.py": "f6a909fe5bd7e09172a5acdd2f38376a01fa915147d65544728a148b91e65d4c"
+      },
+      "provenance": "recorded at deploy by tools/deploy.py",
+      "source_path": "contracts/extractor/extractor.py",
+      "source_sha256": "f7ab0bb1e6b21b822f15cde213a7a659274b5c15c478c95afd61cb59b4c0b1be",
+      "source_size": 12878
+    },
     "keycache": {
       "address": "0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251",
       "commit": "153693c17c678361a9530ce5bee15324848822b0",
