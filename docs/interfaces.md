@@ -8,7 +8,8 @@ Section 9 describes the Router, the KeyCache and Verifier v1.2, deployed on
 Bradbury on 2026-09-26 and now the current production layer. Sections 3 and
 4 describe Registry v1 and Verifier v1.1, the previous versions, which stay
 live. Section 10 describes the pattern Extractor, deployed on Bradbury on
-2026-09-28 and current.
+2026-09-28 and current. Section 11 describes the LLM Extractor, the
+model-reading lane, which is built and not deployed.
 
 The key words MUST, MUST NOT, SHOULD and SHOULD NOT in section 5 are to be
 read as described in RFC 2119.
@@ -25,7 +26,8 @@ consumer to talk to another one.
 | KeyCache | deployed, current | What RSA key a domain published under a selector, and whether it is `pending`, `active`, `rotated` or `retired`. |
 | Verifier | deployed, v1.2 current | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
 | Registry | deployed, v1, previous version, still live | The key cache and version router that the Router and the KeyCache replace. Verifier v1.1 still reads its keys from it. |
-| Extractor | deployed, v1 current, see section 10 | Whether the body served at a URL is the one a Verifier record's signature committed to, and what the sender's patterns read in it. It answers "what does it say". The second Extractor of section 8 is still a proposal. |
+| Extractor | deployed, v1 current, see section 10 | Whether the body served at a URL is the one a Verifier record's signature committed to, and what the sender's patterns read in it. It answers "what does it say" for senders with a patterns document. |
+| LLM Extractor | built, not deployed, see section 11 | The same body check, with the reading done by each validator's model through a hardened prompt, for senders with no patterns. It answers "what does it say" where the pattern Extractor cannot. |
 
 The Router, the KeyCache and Verifier v1.2 split the Registry's two jobs and
 were deployed on Bradbury on 2026-09-26; see section 9 for what changed.
@@ -41,13 +43,17 @@ Which layer a consumer needs:
 - **Who sent this?** The Verifier, through `check_for`. A consumer that
   already holds a Verifier address needs nothing else. It uses the Router
   only to find that address.
-- **What does it say?** The Extractor, through `get_record`, once its
-  `match` is true and its `reason` is `extracted`. `resolve("extractor")` on
-  the Router returns it. It checks the body served at a URL against the `bh`
-  and `body_canon` of a Verifier record, which the Verifier itself never
-  checks, and reads fields out of it with the sender's patterns (section
-  10). A consumer still applies the Verifier's rules to the Verifier record
-  the Extractor record names.
+- **What does it say?** One of two Extractor lanes, through `get_record`,
+  once its `match` is true and its `reason` is `extracted`. Both check the
+  body served at a URL against the `bh` and `body_canon` of a Verifier
+  record, which the Verifier itself never checks, and write records with
+  the same field set, told apart by `method`. The pattern lane,
+  `resolve("extractor")` on the Router, reads fields with the sender's
+  patterns (section 10) and refuses a sender that has none. The model lane,
+  `resolve("extractor_llm")` once it is deployed, takes any sender and has
+  each validator's model read `shipped` and `eta_day` through the prompt
+  probe D2 measured (section 11). A consumer still applies the Verifier's
+  rules to the Verifier record the Extractor record names.
 - **What key did this domain publish, and may it be used?** The KeyCache,
   through `key_status`.
 
@@ -762,11 +768,12 @@ What remains on chain besides the record depends on the path:
   URL is public in calldata from the moment the transaction is submitted, so
   anyone who reads the chain can fetch the headers while they are served.
 
-### 6.1 The model-reading lane (measured, not deployed)
+### 6.1 The model-reading lane (measured, built, not deployed)
 
-No model-reading lane is deployed. Probe D2
+No model-reading lane is deployed. It is built as the LLM Extractor,
+section 11. Probe D2
 ([experiments/llm-probe-2](../experiments/llm-probe-2/README.md)), run on
-Bradbury on 24 September 2026, measured the design it will use:
+Bradbury on 24 September 2026, measured the design it uses:
 
 - **The hardened prompt builder**, `llm/prompt.py` in the probe, as it is:
   the body is sanitized, placed between markers tagged with a hash of the
@@ -781,6 +788,10 @@ Bradbury on 24 September 2026, measured the design it will use:
 - **A deterministic prefilter in front of the model**, `llm/prefilter.py`.
   Measured locally, it flags 6 of the 8 attack bodies and neither ordinary
   body, so it sits in front of the builder and does not replace it.
+  The LLM Extractor narrows its key rule to a key used as a key, so a word
+  in a URL or prose is not a hit; locally that flags 5 of the 8 and leaves
+  08, a plain-prose note the prompt resisted 4 of 4 in D2, to the model
+  (docs/llmextractor.md).
 - **The record carries the method** that produced the reading, and the
   consumer decides on the record, not on the transaction (section 5, rule
   10).
@@ -886,7 +897,8 @@ change.
   patterns and one reading with a model, each behind its own selector, so
   that a flaw in one cannot affect the other. Each record says which method
   produced it. The pattern Extractor was deployed on 2026-09-28 and is
-  described in section 10; the other one is still a proposal.
+  described in section 10; the LLM Extractor is built and not deployed, and
+  is described in section 11.
 - **Build provenance (proposal).** The library version and hash recorded for
   every deployment.
 - **Deploy provenance (in place).** `tools/deploy.py` checks the working
@@ -1101,7 +1113,84 @@ was written:
 - The order number. It is never stored, hashed or logged; only whether an
   expression found one.
 
-## 11. Related work
+## 11. LLM Extractor, schema version 1
+
+Source: `contracts/llmextractor/llmextractor_template.py`, with
+`lacre/dkimbody.py` and `lacre/llmfields.py` spliced in by
+`contracts/llmextractor/build.py`. **Built and tested against the stubbed
+SDK, not deployed**: it has no address, the Router has no `extractor_llm`
+entry, and `deployments.json` has no entry for it. The design notes, the
+prompt, the prefilter and the full reason table are in
+[docs/llmextractor.md](llmextractor.md).
+
+**Interface.** `extract(record_id, body_url)`, payable, returns a record id
+or a refusal reason and never raises. The views are `get_record(id)`,
+`count()`, `records_of(requester)`, `last_refusal(requester)`,
+`prompt_sha256()`, `fee()`, `treasury()`, `owner()`, `pending_owner()`,
+`pending_treasury()` and `router()`. Fee, refund, treasury, ownership and
+`withdraw` are the pattern Extractor's (section 10). There is no owner
+data. The Router name is `extractor_llm`; the constructor takes the Router
+address and the Verifier is resolved with `resolve("verifier")` on every
+call, read at `LATEST_FINAL` and never stored.
+
+**Refusals**, in order, each refunded in full by external message and
+recorded in `last_refusal`: `fee not paid`; `router unreadable`,
+`router resolves no verifier`, `verifier unreadable`; `record not found`,
+`record not valid`, `record not aligned`, `body canonicalization not
+supported`; `url not allowed`. Any sender domain is accepted.
+
+**Agreement.** Validators agree under `strict_eq` on
+`match|shipped|eta_day|flagged|reason`. The model is called once per
+validator, in JSON mode, and only for a body that matched `bh`, passed the
+prefilter and is at most 8192 bytes of text after sanitizing. Every outcome
+past the refusals is a stored record that keeps the fee, including a model
+call that raised (`model failed: <ExceptionClass>`) or answered in a shape
+that cannot be read (`model output unparseable`). A validator whose model
+runs past its time limit votes TIMEOUT; that is not an outcome the contract
+sees, and it can leave a FINALIZED transaction with no record (section 5,
+rule 10).
+
+**Record, schema version 1.** `get_record(id)` returns the pattern
+Extractor's fields with `prompt_sha256` in place of `patterns_sha256`, and
+`flagged`: `id`, `schema_version` (`"1"`), `verifier`, `record_id`,
+`domain`, `bh`, `match`, `reason`, `method` (`"llm"`), `prompt_sha256`,
+`shipped`, `eta_day`, `eta_date`, `order_id_found`, `flagged`, `signed_at`,
+`requester`, `extracted_at` and `fee_paid`. Booleans are booleans,
+addresses hex strings, everything else a string. **`eta_date` is always
+`""` and `order_id_found` always `false` in this version**: the lane does
+not produce them, and a consumer must not read them as findings.
+
+**What `match` true with `reason` `extracted` guarantees**, when the record
+was written:
+
+- the Verifier the Router resolved held a record with that id, `valid` and
+  `aligned` true, and `body_canon` `simple` or `relaxed`;
+- every agreeing validator fetched a body of at most 262 144 bytes whose
+  SHA-256 under that canonicalization equals the record's `bh`;
+- the first `text/plain` part of that body was not flagged by the
+  prefilter, and was at most 8192 bytes after sanitizing;
+- every agreeing validator's model, given the prompt whose template has
+  SHA-256 `prompt_sha256`, answered a JSON object whose `shipped` is the
+  stored boolean and whose `eta_day` folds to the stored word or to nothing
+  in the seven.
+
+**What it does not guarantee.**
+
+- That the reading is right. It is what the models agreed the text says.
+  Probe D2 measured 40 of 40 correct readings on ten synthetic Spanish
+  bodies, eight of them attacks; that is the basis, not a proof.
+- That the body is true. It is what the sender signed.
+- That a prompt injection was absent. The prefilter flags some shapes of it
+  and the prompt resists others; `flagged` false means only that the
+  prefilter did not fire.
+- Anything about `eta_date` or an order number.
+- The Verifier record's current state, the key's, the requester's identity
+  or the domain a consumer wants: apply section 5 to the Verifier record
+  the record names.
+- Uniqueness. The same body can be extracted any number of times, and each
+  run is a new model reading.
+
+## 12. Related work
 
 **ZK Email** (Ethereum). The user generates a zero-knowledge proof off
 chain, and a contract verifies it against a DKIM key registry. Keys in that

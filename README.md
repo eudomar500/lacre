@@ -54,7 +54,11 @@ Verifier record and the URL of the message body, checks the body against the
 record's `bh`, and stores what the sender's patterns read in it: whether it
 shipped, the weekday it arrives, a date when the text carries one, and
 whether an order number is present, never the number itself. See
-[docs/extractor.md](docs/extractor.md).
+[docs/extractor.md](docs/extractor.md). A second lane for senders with no
+patterns, the LLM Extractor in `contracts/llmextractor/`, has each
+validator's model read the same body through the prompt probe D2 measured;
+it is built and tested and not deployed. See
+[docs/llmextractor.md](docs/llmextractor.md).
 
 The previous versions stay live. Registry v1, at
 `0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc`, holds the amazon.com key and
