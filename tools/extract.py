@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract fields from a signed body through the Extractor and confirm the record.
+"""Extract fields from a signed body through an Extractor and confirm the record.
 
 This is the reference client for extract. It follows the confirmation
 protocol of tools/attest.py, whose functions it runs: send, wait for a
@@ -17,6 +17,13 @@ and carry a body canonicalization of simple or relaxed), a patterns document
 for the record's domain, and the URL. A call that would be refused is not
 sent.
 
+There are two lanes, each its own contract behind its own Router name:
+--lane patterns (the default) calls the pattern Extractor, resolve("extractor"),
+and --lane llm the LLM Extractor, resolve("extractor_llm"), which reads
+senders that have no patterns (docs/llmextractor.md). The LLM Extractor
+takes any sender domain, so the patterns check is skipped for it; everything
+else, the protocol and the exit codes included, is the same for both.
+
 The outcome is read from the Extractor's views: records_of(sender) and
 last_refusal(sender) before the first attempt and after each one. The record
 is an id records_of lists afterwards that it did not list then, whose
@@ -27,7 +34,7 @@ the signed one, or could not be read, and the fee is kept.
 Usage:
     export PROBE_PK=0x<64 hex chars>
     python3 tools/extract.py RECORD_ID --url HTTPS_URL
-        [--network bradbury] [--router ADDRESS] [--value WEI]
+        [--lane patterns|llm] [--network bradbury] [--router ADDRESS] [--value WEI]
         [--until accepted|finalized] [--attempts N] [--log FILE]
 
 RECORD_ID is the id of a Verifier record, on the Verifier the Router
@@ -57,16 +64,20 @@ import chain
 import txstate
 from attest import FINAL, NONFINAL, Stop, must_read
 
-# Limits of contracts/extractor/extractor.py.
+# Limits of contracts/extractor/extractor.py, shared by
+# contracts/llmextractor/llmextractor.py.
 MAX_URL = 512
 CANONS = ("simple", "relaxed")
+# The Router name of each lane's contract.
+LANES = {"patterns": "extractor", "llm": "extractor_llm"}
 
 
-def refusal(view, extractor, verifier, record_id, url, value):
+def refusal(view, extractor, verifier, record_id, url, value, lane="patterns"):
     """The reason the Extractor would refuse this call now, or None.
 
     The checks extract runs before any work, in its order. verifier is what
-    the Router resolves "verifier" to, "" when it resolves nothing.
+    the Router resolves "verifier" to, "" when it resolves nothing. The llm
+    lane has no patterns and refuses no domain.
     """
     if value < int(must_read(view, extractor, "fee", [], NONFINAL)):
         return "fee not paid"
@@ -84,7 +95,8 @@ def refusal(view, extractor, verifier, record_id, url, value):
         return "record not aligned"
     if record.get("body_canon") not in CANONS:
         return "body canonicalization not supported"
-    if not must_read(view, extractor, "patterns", [str(record.get("domain", ""))], NONFINAL):
+    if lane == "patterns" and not must_read(view, extractor, "patterns",
+                                             [str(record.get("domain", ""))], NONFINAL):
         return "no patterns for domain"
     url = str(url).strip()
     if not url.startswith("https://") or len(url) > MAX_URL:
@@ -112,15 +124,17 @@ class Session(attest.Session):
                               getter="get_record", matches=ours, contract="Extractor")
 
 
-def resolve(view, router):
+def resolve(view, router, name="extractor"):
     """(extractor, verifier) as the Router resolves them at LATEST_FINAL.
+
+    name is the lane's Router name, "extractor" or "extractor_llm".
 
     An Extractor that resolves its Verifier through another Router would be
     checked against the wrong Verifier here, so that stops the tool.
     """
-    extractor = str(must_read(view, router, "resolve", ["extractor"], FINAL))
+    extractor = str(must_read(view, router, "resolve", [name], FINAL))
     if not extractor:
-        raise Stop("the Router %s resolves no extractor" % (router,))
+        raise Stop("the Router %s resolves no %s" % (router, name))
     named = str(must_read(view, extractor, "router", [], FINAL))
     if named.lower() != str(router).lower():
         raise Stop("the Extractor %s resolves its Verifier through the Router %s, not %s"
@@ -136,6 +150,8 @@ def parse(argv):
                "3 attempts exhausted without executing, 4 stopped")
     parser.add_argument("record_id", help="id of a Verifier record")
     parser.add_argument("--url", required=True, help="HTTPS URL serving the message body")
+    parser.add_argument("--lane", choices=sorted(LANES), default="patterns",
+                        help="patterns (resolve extractor) or llm (resolve extractor_llm)")
     parser.add_argument("--network", default=chain.DEFAULT_NETWORK, choices=sorted(chain.NETWORKS))
     parser.add_argument("--router", help="Router address (default: deployments.json)")
     parser.add_argument("--value", type=int, help="wei to attach (default: fee())")
@@ -162,7 +178,7 @@ def main(argv=None):
             "value": args.value}
     session = Session(net, client, account, None, call)
     try:
-        extractor, verifier = resolve(session.view, router)
+        extractor, verifier = resolve(session.view, router, LANES[args.lane])
     except Stop as error:
         chain.die("%s; nothing was sent" % (error,))
     call["verifier"] = extractor
@@ -174,7 +190,8 @@ def main(argv=None):
 
     print("network      : %s (chain id %d)" % (args.network, net["chain_id"]))
     print("router       : %s" % (router,))
-    print("extractor    : %s (resolve(\"extractor\") at LATEST_FINAL)" % (extractor,))
+    print("lane         : %s" % (args.lane,))
+    print("extractor    : %s (resolve(\"%s\") at LATEST_FINAL)" % (extractor, LANES[args.lane]))
     print("verifier     : %s (resolve(\"verifier\") at LATEST_FINAL)" % (verifier or "none",))
     print("record_id    : %s" % (args.record_id,))
     print("body url     : %s" % (args.url,))
@@ -184,7 +201,7 @@ def main(argv=None):
 
     try:
         reason = refusal(session.view, extractor, verifier, args.record_id, args.url,
-                         call["value"])
+                         call["value"], args.lane)
     except Stop as error:
         chain.die("%s; nothing was sent" % (error,))
     if reason is not None:

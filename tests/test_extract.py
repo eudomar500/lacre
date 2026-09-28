@@ -165,3 +165,58 @@ def test_the_session_reads_extractor_records_with_get_record():
     found = session.outcome(STATE, "0xabc", {"ids": [], "refusal": ""})
     assert found["records"][0][0] == "3"
     assert (EXTRACTOR, "get_record", ("3",), attest.FINAL) in view.seen
+
+
+# The llm lane: resolve("extractor_llm") and no patterns check.
+
+LLM_EXTRACTOR = "0x" + "e2" * 20
+
+
+def llm_views(record=RECORD, fee=0):
+    return stubbed({
+        (ROUTER, "resolve"): lambda name: {"extractor": EXTRACTOR,
+                                           "extractor_llm": LLM_EXTRACTOR,
+                                           "verifier": VERIFIER}.get(name, ""),
+        (LLM_EXTRACTOR, "router"): ROUTER,
+        (LLM_EXTRACTOR, "fee"): fee,
+        (VERIFIER, "get"): lambda record_id: dict(record) if record_id == "0" else {},
+    })
+
+
+def test_the_llm_lane_resolves_its_own_name():
+    assert extract.resolve(llm_views(), ROUTER, extract.LANES["llm"]) == (LLM_EXTRACTOR, VERIFIER)
+    assert extract.LANES == {"patterns": "extractor", "llm": "extractor_llm"}
+
+
+def test_the_llm_lane_stops_when_the_router_has_no_extractor_llm():
+    view = stubbed({(ROUTER, "resolve"): lambda name: EXTRACTOR if name == "extractor" else ""})
+    with pytest.raises(attest.Stop, match="resolves no extractor_llm"):
+        extract.resolve(view, ROUTER, "extractor_llm")
+
+
+def test_the_llm_lane_never_asks_for_patterns():
+    view = llm_views(record=dict(RECORD, domain="example.com"))
+    assert extract.refusal(view, LLM_EXTRACTOR, VERIFIER, "0", URL, 0, "llm") is None
+    assert not [seen for seen in view.seen if seen[1] == "patterns"]
+
+
+@pytest.mark.parametrize("change, reason", [
+    ({"value": 0, "fee": 1}, "fee not paid"),
+    ({"record_id": "9"}, "record not found"),
+    ({"record": dict(RECORD, valid=False)}, "record not valid"),
+    ({"record": dict(RECORD, aligned=False)}, "record not aligned"),
+    ({"record": dict(RECORD, body_canon="nowsp")}, "body canonicalization not supported"),
+    ({"url": "http://lacre.in-sidr.xyz/b"}, "url not allowed"),
+])
+def test_the_llm_lane_predicts_the_other_refusals(change, reason):
+    view = llm_views(**{key: change[key] for key in ("record", "fee") if key in change})
+    got = extract.refusal(view, LLM_EXTRACTOR, VERIFIER, change.get("record_id", "0"),
+                          change.get("url", URL), change.get("value", 0), "llm")
+    assert got == reason
+
+
+def test_the_lane_defaults_to_patterns():
+    assert extract.parse(["0", "--url", URL]).lane == "patterns"
+    assert extract.parse(["0", "--url", URL, "--lane", "llm"]).lane == "llm"
+    with pytest.raises(SystemExit):
+        extract.parse(["0", "--url", URL, "--lane", "model"])
