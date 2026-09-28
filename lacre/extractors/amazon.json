@@ -1,0 +1,6 @@
+{
+  "eta_date": [],
+  "eta_day": ["\\bllega\\s+el\\s+([a-z]+)"],
+  "order_id": ["\\b\\d{3}-\\d{7}-\\d{7}\\b"],
+  "shipped": ["\\bse\\s+envi(?:aron|o)\\b", "\\bha\\s+sido\\s+enviado\\b"]
+}

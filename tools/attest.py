@@ -231,13 +231,17 @@ def refunded(messages, call):
         and message["value"] == call["value"] for message in messages)
 
 
-def outcome(view, messages, state, call, before):
+def outcome(view, messages, state, call, before, getter="get", matches=None,
+            contract="Verifier"):
     """What an executed call returned, as far as the Verifier's views show it.
 
     before is snapshot() ahead of the first attempt. Returns
     {"records": [(id, record), ...], "reason": str or None,
-    "unchanged": str or None}; unchanged is a last_refusal that reads as it
-    did before and cannot be tied to this call. Raises Stop when a read fails.
+    "unchanged": str or None, "contract": contract}; unchanged is a
+    last_refusal that reads as it did before and cannot be tied to this call.
+    Raises Stop when a read fails. getter, matches and contract let
+    tools/extract.py judge the Extractor the same way: its records are read
+    with get_record and belong to a call by other fields.
     """
     variant = FINAL if state["status"] == "FINALIZED" else NONFINAL
     after = snapshot(view, call, variant)
@@ -245,12 +249,12 @@ def outcome(view, messages, state, call, before):
     for record_id in after["ids"]:
         if record_id in before["ids"]:
             continue
-        record = must_read(view, call["verifier"], "get", [record_id], variant)
+        record = must_read(view, call["verifier"], getter, [record_id], variant)
         # records_of already keys on the requester; the other fields keep a
         # concurrent call from the same sender from being taken for this one.
-        if ours(record, call):
+        if (matches or ours)(record, call):
             records.append((record_id, record))
-    found = {"records": records, "reason": None, "unchanged": None}
+    found = {"records": records, "reason": None, "unchanged": None, "contract": contract}
     last = after["refusal"]
     if records or not last:
         return found
@@ -293,7 +297,8 @@ def judge(state, until, found, sender):
         if str(record.get("requester", "")).lower() == sender.lower():
             return RECORDED, "record %s, requester %s" % (record_id, record["requester"])
     if found["reason"] is not None:
-        return REFUSED, "the Verifier refused the call: %s" % (found["reason"],)
+        return REFUSED, "the %s refused the call: %s" % (found.get("contract", "Verifier"),
+                                                          found["reason"])
     if found.get("unchanged") is not None:
         return STOP, ("no new record, and last_refusal still reads %r as it did before the "
                       "first attempt, with no refund on the transaction: a second refusal "
