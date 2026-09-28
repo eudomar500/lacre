@@ -14,9 +14,13 @@ v1.1 reads.
 It started empty. There is no migration from Registry v1: keys are
 registered again, and each one waits out the quarantine. The first,
 amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, was registered on
-2026-09-26 (`first_seen` `2026-09-26T21:34:15Z`) and is `pending` until
-`confirm_key` activates it, which the quarantine allows from 2026-09-27
-21:34:15 UTC.
+2026-09-26 (`first_seen` `2026-09-26T21:34:15Z`), consensus tx
+`0x5bbb28c4f34f5a949bbb4e4597e8ef2f27778642f3d1f375d03b270c0ff4b09f`, L2 gas
+used 843 309. The quarantine allowed `confirm_key` from 2026-09-27 21:34:15
+UTC, and `confirm_key` activated it, consensus tx
+`0xf550e04716cc5fb21dd4658915b4265659086957686de99ea6b88d36366cd991`,
+ACCEPTED with AGREE, L2 gas used 843 297. The key is `active`, with
+`activated_at` `2026-09-27T21:40:17Z`.
 
 ## Why the quarantine
 
@@ -274,5 +278,6 @@ of 14 000. At 870 gas per byte that is 10 856 730 gas, 64.7 percent of the
 `77e9413a...9743cfa8`, `lacre/dkimkey.py` at `93e04f54...5ce50cda`) is
 10 652 847 gas, 63.5 percent, and is the figure to go by. `tools/deploy.py`
 signs at three times the estimate clamped to 2^24, which here is 1.57
-times. The KeyCache takes no constructor argument, and the deployer is the
-owner.
+times. The deploy of 2026-09-26 used 10 008 958 gas on L2, 94 percent of
+the estimate. The KeyCache takes no constructor argument, and the deployer
+is the owner.

@@ -42,8 +42,8 @@ address is the Router in `contracts/router/`, at
 change. The KeyCache in `contracts/keycache/`, at
 `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`, holds the DKIM keys and makes
 each new one wait out a 24 hour quarantine before it can be used; the
-amazon.com key was registered there on 2026-09-26 and is pending until
-`confirm_key`. Verifier v1.2 in `contracts/verifier/`, at
+amazon.com key was registered there on 2026-09-26 and has been active since
+`confirm_key` on 2026-09-27. Verifier v1.2 in `contracts/verifier/`, at
 `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed`, turns a DKIM signature into the
 record described above, reads its keys from the KeyCache through the Router,
 and only attests against an active key.
@@ -85,3 +85,5 @@ follows are in [docs/interfaces.md](docs/interfaces.md), section 5.
 
 Status: research probes plus the Router, the KeyCache and the Verifier on a
 testnet, with the previous Registry and Verifier still live beside them.
+The amazon.com key is active on the KeyCache, and Verifier v1.2 holds its
+first record, written on 2026-09-27 and finalized.

@@ -242,6 +242,14 @@ source SHA-256 `2dc36351...6f166d86`, 6 309 bytes of calldata) is
 5 675 496 gas, 33.8 percent: 8 percent above the 870 rule, so on a
 contract this small the rule is not an upper bound. The node's estimate is
 the figure to go by. `tools/deploy.py` signs at three times the estimate
-clamped to 2^24, which here is 2.96 times.
+clamped to 2^24, which here is 2.96 times. The deploy of 2026-09-26 used
+5 409 620 gas on L2, 95 percent of the estimate.
+
+The two wiring calls of 2026-09-26, both ACCEPTED with AGREE:
+
+| call | consensus tx | L2 gas used |
+|------|--------------|-------------|
+| `set_version("keycache", "v1", "0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251")` | `0x199c0d1783547418f367af2e15f9d888cf8a7e1b23e8df54d66f6c3b7e0acdbf` | 843 429 |
+| `set_version("verifier", "v1.2", "0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed")` | `0x4be42c8850f1629086bc0ced194f2524b390e126e60a56b539a07071124c1acb` | 843 453 |
 
 The Router takes no constructor argument. The deployer is the owner.

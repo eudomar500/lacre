@@ -95,16 +95,20 @@ replaced, and its provenance is below.
 The three contracts deployed on 2026-09-26 were recorded at deploy time by
 `tools/deploy.py`, from clean trees:
 
-| contract | commit | source SHA-256 | source size | node's deploy gas estimate |
-|----------|--------|----------------|-------------|----------------------------|
-| Router | `93d3592e90c939e450b78bb32ec54309b9445020` | `2dc36351611a1f460c4ed0e56217e86742d189105312c32388a6e9266f166d86` | 6 043 bytes | 5 675 496 |
-| KeyCache | `153693c17c678361a9530ce5bee15324848822b0` | `77e9413af044150aa1ce4a9af990dc192bfc590b49226324ac56c61d9743cfa8` | 12 479 bytes | 10 652 847 |
-| Verifier v1.2 | `452de65b52c2c44ad0866d28ed7eb600f8caa920` | `dfc1c100f655779b0dfaa6129e81d9b109d08656d8289e883e191cb320189b48` | 18 289 bytes | 15 341 609 |
+| contract | commit | source SHA-256 | source size | node's deploy gas estimate | L2 gas used by the deploy |
+|----------|--------|----------------|-------------|----------------------------|---------------------------|
+| Router | `93d3592e90c939e450b78bb32ec54309b9445020` | `2dc36351611a1f460c4ed0e56217e86742d189105312c32388a6e9266f166d86` | 6 043 bytes | 5 675 496 | 5 409 620 |
+| KeyCache | `153693c17c678361a9530ce5bee15324848822b0` | `77e9413af044150aa1ce4a9af990dc192bfc590b49226324ac56c61d9743cfa8` | 12 479 bytes | 10 652 847 | 10 008 958 |
+| Verifier v1.2 | `452de65b52c2c44ad0866d28ed7eb600f8caa920` | `dfc1c100f655779b0dfaa6129e81d9b109d08656d8289e883e191cb320189b48` | 18 289 bytes | 15 341 609 | 14 205 651 |
 
-The gas figures are the node's `eth_estimateGas` for the same source hashes
+The estimates are the node's `eth_estimateGas` for the same source hashes
 from `tools/deploy.py --estimate-only` on 2026-09-26, before the deploys
 (section 9); the Verifier's was estimated with a placeholder Router
-argument. The KeyCache inlines `lacre/dkimkey.py` at
+argument. The estimate `tools/deploy.py` printed for the Verifier at deploy
+time, with the Router as its argument, was 15 333 439. The gas used is the
+L2 receipt's `gasUsed` from the deploy log; each deploy was signed with a
+gas limit of 16 777 216 and reached ACCEPTED with AGREE. The KeyCache
+inlines `lacre/dkimkey.py` at
 `93e04f5410f5af23286d14723898086303b58572050ab63c40eeac4b5ce50cda` and
 Verifier v1.2 inlines `lacre/dkimcore.py` at
 `834bbcdbeac807610953f91148638002ba2280c35ed2bac028d8f2eb72301b92`, as
@@ -115,27 +119,52 @@ wallet on 2026-09-26. Both names were new on this Router, so each took
 effect at once, without the 48 hour delay (section 9). `history(name)` on
 the Router returns them:
 
-| call | `set_at` |
-|------|----------|
-| `set_version("keycache", "v1", "0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251")` | `2026-09-26T20:57:38Z` |
-| `set_version("verifier", "v1.2", "0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed")` | `2026-09-26T20:58:43Z` |
+| call | consensus tx | L2 gas used | `set_at` |
+|------|--------------|-------------|----------|
+| `set_version("keycache", "v1", "0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251")` | `0x199c0d1783547418f367af2e15f9d888cf8a7e1b23e8df54d66f6c3b7e0acdbf` | 843 429 | `2026-09-26T20:57:38Z` |
+| `set_version("verifier", "v1.2", "0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed")` | `0x4be42c8850f1629086bc0ced194f2524b390e126e60a56b539a07071124c1acb` | 843 453 | `2026-09-26T20:58:43Z` |
 
-`pending("verifier")` and `pending("keycache")` are empty: no change is
-queued.
+Both reached ACCEPTED with AGREE in 21 seconds. `pending("verifier")` and
+`pending("keycache")` are empty: no change is queued.
 
 **The first key on the KeyCache.** `register_key("amazon.com",
-"yg4mwqurec7fkhzutopddd3ytuaqrvuz")` was sent on 2026-09-26. `key_status`
-reads it back as `pending`, with `first_seen` `2026-09-26T21:34:15Z`, 1024
-bits and `key_sha256`
+"yg4mwqurec7fkhzutopddd3ytuaqrvuz")` was sent on 2026-09-26, consensus tx
+`0x5bbb28c4f34f5a949bbb4e4597e8ef2f27778642f3d1f375d03b270c0ff4b09f`,
+ACCEPTED with AGREE in 22 seconds, L2 gas used 843 309. It stored the key as
+`pending`, with `first_seen` `2026-09-26T21:34:15Z`, 1024 bits and
+`key_sha256`
 `bbf3759e9e7f30d0ebd2dbe1e316afa63687820c1a582729114e8466c3ab329c`, the same
-key Registry v1 holds for that selector. It stays `pending` until someone
-calls `confirm_key`, which the KeyCache accepts from 24 hours after
-`first_seen`, 2026-09-27 21:34:15 UTC, and which activates it only if both
-resolvers still publish the same DER. Until then Verifier v1.2 refuses and
-refunds every amazon.com call on that selector with `key pending`, and
-Verifier v1.1, through Registry v1, still accepts it.
+key Registry v1 holds for that selector. The KeyCache accepts `confirm_key`
+from 24 hours after `first_seen`, 2026-09-27 21:34:15 UTC, and activates the
+key only if both resolvers still publish the same DER.
 
-Verifier v1.2 holds no records yet.
+`confirm_key("amazon.com", "yg4mwqurec7fkhzutopddd3ytuaqrvuz")` was sent
+after that, consensus tx
+`0xf550e04716cc5fb21dd4658915b4265659086957686de99ea6b88d36366cd991`,
+ACCEPTED with AGREE, L2 gas used 843 297. The key is now `active`, with
+`activated_at` `2026-09-27T21:40:17Z`, and Verifier v1.2 attests against it.
+Verifier v1.1, through Registry v1, still accepts the same key.
+
+**The first attestation on Verifier v1.2.** Record `0` on Verifier v1.2 was
+written through the gateway:
+
+| field | value |
+|-------|-------|
+| consensus tx | `0x0847c13447bb807fe9d0dd942bf6730b9a6fb09f42095a9abd2d4b0d56fda311` |
+| submitted | 2026-09-27 23:12:18 UTC |
+| ACCEPTED | 2026-09-27 23:12:57 UTC |
+| FINALIZED | 2026-09-27 23:45:01 UTC |
+| attempts | 1 |
+| `valid` | true |
+| `aligned` | true |
+| `schema_version` | 2 |
+| `source` | `url` |
+| `body_canon` | `simple` |
+| `key_bits` | 1024 |
+| `fee_paid` | 0 |
+| `requester` | `0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561` |
+
+`records_of("0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561")` returns `[0]`.
 
 Other transactions on the previous versions an integrator may want to
 check:

@@ -653,7 +653,7 @@ below are on Bradbury, deployed from the owner wallet
 
 | version | address | deploy consensus tx | deploy gas | source | status |
 |---------|---------|---------------------|------------|--------|--------|
-| v1.2 | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | `0xf4a587ea3db13ef10f38fa2ce78a917e052f38c9aa0ac661c7a8f0fa26b15121` | 15 341 609 estimated by the node | 18 289 bytes | current, the Router's `resolve("verifier")` |
+| v1.2 | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | `0xf4a587ea3db13ef10f38fa2ce78a917e052f38c9aa0ac661c7a8f0fa26b15121` | 14 205 651 used of 15 341 609 estimated, AGREE | 18 289 bytes | current, the Router's `resolve("verifier")` |
 | v1.1 | `0x9821cfa5fe33a24f9d1D3Cca15885f1a2781EA1d` | `0x8ab6817cf0582fb5579dd3b36fc50a0f56dac4e895c934716e0b04a10e9d021e` | 13.21 M used, 0.028 GEN, AGREE | 16 912 bytes | previous version, still live, Registry v1 `version("verifier")` points here |
 | v1 | `0x74AfE3a7E6D2601bdC9BCC6265d8314F1a74807a` | `0x7b214b0f273c5c1b4135a7ed482cbab9b521c373ac88da3e57ba63f2d43132bc` | 13.24 M used of 14.3 M estimated, 0.028 GEN, AGREE | 16 954 bytes | retired by `set_version` |
 
@@ -666,16 +666,27 @@ v1.2 was deployed by `tools/deploy.py` from a clean tree at commit
 `834bbcdbeac807610953f91148638002ba2280c35ed2bac028d8f2eb72301b92` inlined,
 all as recorded in `deployments.json`. Its constructor argument is the
 Router `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, which `router()`
-returns. The gas figure is the node's estimate for the same source, from
-[Building, checking and deploying](#building-checking-and-deploying).
+returns. The estimate is the node's for the same source, from
+[Building, checking and deploying](#building-checking-and-deploying); the
+deploy used 14 205 651 gas on L2, 93 percent of it, and came in under the
+2^24 limit it was signed with.
 
 The Router pointed `verifier` at it with label `v1.2` on 2026-09-26
-(`set_at` `2026-09-26T20:58:43Z` in `history("verifier")`), and resolves
-`keycache` to the KeyCache
+(`set_at` `2026-09-26T20:58:43Z` in `history("verifier")`), consensus tx
+`0x4be42c8850f1629086bc0ced194f2524b390e126e60a56b539a07071124c1acb`, and
+resolves `keycache` to the KeyCache
 `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`. The one key registered there,
-amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, is `pending` until
-`confirm_key`, so until then v1.2 refuses and refunds amazon.com calls on
-that selector with `key pending`. v1.2 holds no records yet and its fee is 0.
+amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, was activated by
+`confirm_key` with `activated_at` `2026-09-27T21:40:17Z`. The v1.2 fee is 0.
+
+Record `0`, the first on v1.2, was written through the gateway, consensus tx
+`0x0847c13447bb807fe9d0dd942bf6730b9a6fb09f42095a9abd2d4b0d56fda311`,
+submitted 2026-09-27 23:12:18 UTC, ACCEPTED 23:12:57 and FINALIZED 23:45:01
+on the first attempt. It is `valid` and `aligned`, `schema_version` 2,
+`source` `url`, `body_canon` `simple`, a 1024 bit key, `fee_paid` 0, with
+`requester` `0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561`, whose
+`records_of` returns `[0]`. The full record is in
+[docs/interfaces.md](interfaces.md), section 2.
 
 ### v1.1
 
