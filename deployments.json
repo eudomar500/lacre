@@ -29,6 +29,21 @@
       "source_sha256": "77e9413af044150aa1ce4a9af990dc192bfc590b49226324ac56c61d9743cfa8",
       "source_size": 12479
     },
+    "llmextractor": {
+      "address": "0xCC095f05Dbb55a339Fe126F3AF879224487371d6",
+      "commit": "ee3304d4c2a236610c2fb01b85293797133c9ba0",
+      "commit_dirty": false,
+      "consensus_tx": "0xfea32ba5800dbda1084ef2b2aee89f6cefd1b0b55e03634b7f19c22ac27b364d",
+      "deployed_at": "2026-09-28T18:47:59+00:00",
+      "inlined_modules": {
+        "dkimbody.py": "56360e2fe6a2845830d603cd254aedf4524d2bfcb998472c716ceb9c177e6916",
+        "llmfields.py": "d6714a2637085cbc217854c6a3688e1a2c588f3f05847ee37bdf91e9c57595ef"
+      },
+      "provenance": "recorded at deploy by tools/deploy.py",
+      "source_path": "contracts/llmextractor/llmextractor.py",
+      "source_sha256": "aaa256cf6c2c8e0911d0e2fdf8ada0d9fefe72fe679f396b35164dd27ef66842",
+      "source_size": 13888
+    },
     "registry": {
       "address": "0x1E1380B71F1C9c622C432B6FD6fa56097B1E4Ddc",
       "commit": "a56f1c965687614cb15b6ac42cfbb7f7da285a5d",
