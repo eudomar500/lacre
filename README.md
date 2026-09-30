@@ -128,10 +128,23 @@ contract that reads the Verifier and the Extractors through the Router, for
 a third party to copy; it is not deployed. Both are described in
 [docs/direct-use.md](docs/direct-use.md).
 
+Using it: the primitives can be used from any wallet on Bradbury or from a
+contract. There is also a hosted way in at `https://lacre.in-sidr.xyz`, a
+gateway that takes an .eml by upload, by mail to a mailbox it creates, or
+through MCP, pays the fee and the gas itself and charges credits for it.
+The same page lets a wallet sign `attest_inline` itself, and offers a
+DKIM-signed gmail.com sample so a reviewer needs no message of their own.
+
 Status: research probes plus the Router, the KeyCache, the Verifier and
 both extraction lanes, the pattern Extractor and the LLM Extractor, on a
-testnet, with the previous Registry and Verifier still live beside them. The amazon.com key is active on the KeyCache, and Verifier v1.2
-holds its first record, written on 2026-09-27 and finalized. The Extractor is
+testnet, with the previous Registry and Verifier still live beside them.
+The amazon.com key and the gmail.com key (selector 20251104) are active on
+the KeyCache. Verifier v1.2 holds four records, the first written on
+2026-09-27 and finalized. Record 3 was written on 2026-09-30 by
+`attest_inline` sent straight from a wallet, with the wallet as requester,
+fee 0 and about 0.0009 GEN of gas, and finalized; record 4 was written the
+same day through the hosted gateway, for a gmail.com message received in a
+mailbox. The Extractor is
 deployed with the amazon.com patterns set, and holds its first record that
 matched a signed body, record 2, written against that Verifier record on
 2026-09-28 and finalized; records 0 and 1 before it are charged records of a
