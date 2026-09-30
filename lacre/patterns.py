@@ -1,3 +1,6 @@
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+
 # Pattern extraction over a body that already matched its DKIM bh=. Pure
 # stdlib and no file or network access: contracts/extractor/build.py splices
 # this into the Extractor next to lacre/dkimbody.py, and tools/extract_check.py

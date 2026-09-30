@@ -1,3 +1,6 @@
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+
 """Lacre, signed evidence for Intelligent Contracts.
 
 Pure Python only: nothing here imports the GenVM SDK, so the same modules are

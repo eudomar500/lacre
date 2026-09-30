@@ -57,6 +57,12 @@ Which layer a consumer needs:
 - **What key did this domain publish, and may it be used?** The KeyCache,
   through `key_status`.
 
+The layers and the reads between them are drawn in
+[architecture.svg](architecture.svg). How to call them from a wallet
+without the gateway, and how a contract reads them, is in
+[direct-use.md](direct-use.md), with a consumer contract to copy in
+`integrations/consumer_example.py`.
+
 ## 2. Deployed contracts
 
 All contracts are on Testnet Bradbury (chain id 4221), deployed from the

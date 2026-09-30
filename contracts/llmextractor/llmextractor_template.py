@@ -1,5 +1,8 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+#
 # build.py splices lacre/dkimbody.py and lacre/llmfields.py in at the markers
 # below and writes llmextractor.py: edit those or this template, never the
 # built file. Design notes, the record format and the refusals:

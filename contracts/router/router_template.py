@@ -1,5 +1,8 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+#
 # build.py strips the comments and writes router.py: edit this file, never the
 # built one. The Router is kept small on purpose, so that it is the contract
 # least likely to need a new deployment; why, and what it does not do, is in

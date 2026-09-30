@@ -1,3 +1,6 @@
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+
 """DKIM key records: a DNS over HTTPS answer in, an RSA public key out.
 
 The key half of the probe's verifier, with no network and no SDK import, so

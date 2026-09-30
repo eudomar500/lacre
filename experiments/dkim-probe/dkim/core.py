@@ -1,3 +1,6 @@
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+
 # On-chain subset of rfc6376.py. Contract source is charged by the byte on
 # Bradbury, so this file is deliberately small: relaxed header canonicalization,
 # the DKIM-Signature tag list, the signed data, RSA PKCS#1 v1.5 over SHA-256,

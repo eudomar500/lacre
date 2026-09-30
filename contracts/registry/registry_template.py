@@ -1,5 +1,8 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+#
 # build.py splices lacre/dkimkey.py in at the marker below and writes
 # registry.py: edit dkimkey.py, never the built file. What this contract
 # stores, and why it is the one address that does not move, is in

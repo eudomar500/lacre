@@ -1,0 +1,274 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" font-family="'Courier New', Courier, monospace">
+  <title>Lacre architecture on Testnet Bradbury</title>
+  <defs>
+    <pattern id="minor" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+    </pattern>
+    <pattern id="major" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="url(#minor)"/>
+      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#ffffff" stroke-opacity="0.13" stroke-width="1"/>
+    </pattern>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9cc9ff"/>
+    </marker>
+    <marker id="headw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffffff"/>
+    </marker>
+    <marker id="tick" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M 5 0 L 5 10" stroke="#9cc9ff" stroke-width="1.5"/>
+    </marker>
+  </defs>
+
+  <!-- sheet -->
+  <rect width="1600" height="1000" fill="#0c3a70"/>
+  <rect width="1600" height="1000" fill="url(#major)"/>
+  <rect x="12" y="12" width="1576" height="976" fill="none" stroke="#9cc9ff" stroke-width="1.5"/>
+
+  <!-- zone dimensions -->
+  <g stroke="#9cc9ff" stroke-width="1" fill="none">
+    <line x1="20" y1="50" x2="300" y2="50" marker-start="url(#tick)" marker-end="url(#tick)"/>
+    <line x1="312" y1="50" x2="1337" y2="50" marker-start="url(#tick)" marker-end="url(#tick)"/>
+    <line x1="1355" y1="50" x2="1580" y2="50" marker-start="url(#tick)" marker-end="url(#tick)"/>
+    <line x1="20" y1="56" x2="20" y2="70" stroke-dasharray="2 3"/>
+    <line x1="300" y1="56" x2="300" y2="70" stroke-dasharray="2 3"/>
+    <line x1="312" y1="56" x2="312" y2="70" stroke-dasharray="2 3"/>
+    <line x1="1337" y1="56" x2="1337" y2="70" stroke-dasharray="2 3"/>
+  </g>
+  <g fill="#9cc9ff" font-size="15" text-anchor="middle" letter-spacing="1">
+    <text x="160" y="40">OUTSIDE THE CHAIN</text>
+    <text x="824" y="40">ON CHAIN: LACRE ON TESTNET BRADBURY, CHAIN ID 4221</text>
+    <text x="1467" y="40">ON CHAIN: THIRD PARTY</text>
+  </g>
+
+  <!-- boundaries -->
+  <rect x="20" y="70" width="280" height="780" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="10 6"/>
+  <text x="34" y="96" fill="#ffffff" font-size="16" font-weight="bold" letter-spacing="1">OUTSIDE THE CHAIN</text>
+  <rect x="312" y="70" width="1025" height="780" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="14 6 3 6"/>
+
+  <!-- Router -->
+  <rect x="595" y="105" width="460" height="145" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <rect x="595" y="105" width="460" height="35" fill="#16528f" stroke="#ffffff" stroke-width="2"/>
+  <text x="612" y="129" fill="#ffffff" font-size="20" font-weight="bold">ROUTER</text>
+  <text x="1040" y="129" fill="#9cc9ff" font-size="14" text-anchor="end">the one public address</text>
+  <text x="612" y="165" fill="#ffffff" font-size="16">0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9</text>
+  <text x="612" y="190" fill="#9cc9ff" font-size="14">resolve(name) / resolve_pinned(name, label)</text>
+  <text x="612" y="212" fill="#9cc9ff" font-size="14">STORES name -&gt; address, history,</text>
+  <text x="612" y="232" fill="#9cc9ff" font-size="14">pinned labels, pending change (48 h)</text>
+
+  <!-- resolution bus -->
+  <g stroke="#9cc9ff" stroke-width="1.5" fill="none" stroke-dasharray="7 5">
+    <path d="M 825 250 V 300"/>
+    <path d="M 449.5 300 H 1199.5"/>
+    <path d="M 449.5 300 V 398" marker-end="url(#head)"/>
+    <path d="M 699.5 300 V 398" marker-end="url(#head)"/>
+    <path d="M 949.5 300 V 398" marker-end="url(#head)"/>
+    <path d="M 1199.5 300 V 398" marker-end="url(#head)"/>
+  </g>
+  <text x="840" y="290" fill="#9cc9ff" font-size="14">resolved by name, read at LATEST_FINAL</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="456" y="335">"keycache"</text>
+    <text x="706" y="335">"verifier"</text>
+    <text x="956" y="335">"extractor"</text>
+    <text x="1206" y="335">"extractor_llm"</text>
+  </g>
+
+  <!-- KeyCache -->
+  <rect x="332" y="400" width="235" height="300" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <rect x="332" y="400" width="235" height="50" fill="#16528f" stroke="#ffffff" stroke-width="2"/>
+  <text x="344" y="424" fill="#ffffff" font-size="19" font-weight="bold">KEYCACHE</text>
+  <text x="344" y="443" fill="#9cc9ff" font-size="14">v1</text>
+  <text x="344" y="478" fill="#ffffff" font-size="15">0x2b2e13E4aFAAD1AFE124</text>
+  <text x="344" y="498" fill="#ffffff" font-size="15">7085D01c56Aeb425e251</text>
+  <line x1="332" y1="515" x2="567" y2="515" stroke="#9cc9ff" stroke-width="1"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="344" y="538" font-weight="bold" fill="#ffffff">STORES</text>
+    <text x="344" y="560">domain/selector -&gt; key</text>
+    <text x="344" y="580">n, e, key_bits,</text>
+    <text x="344" y="600">key_sha256</text>
+    <text x="344" y="620">state: pending, active,</text>
+    <text x="344" y="640">rotated or retired</text>
+    <text x="344" y="660">first_seen,</text>
+    <text x="344" y="680">activated_at</text>
+  </g>
+
+  <!-- Verifier -->
+  <rect x="582" y="400" width="235" height="300" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <rect x="582" y="400" width="235" height="50" fill="#16528f" stroke="#ffffff" stroke-width="2"/>
+  <text x="594" y="424" fill="#ffffff" font-size="19" font-weight="bold">VERIFIER</text>
+  <text x="594" y="443" fill="#9cc9ff" font-size="14">v1.2</text>
+  <text x="594" y="478" fill="#ffffff" font-size="15">0x50fc4fD7183c9e0C8Bb2</text>
+  <text x="594" y="498" fill="#ffffff" font-size="15">ABD21E55581cE16F59ed</text>
+  <line x1="582" y1="515" x2="817" y2="515" stroke="#9cc9ff" stroke-width="1"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="594" y="538" font-weight="bold" fill="#ffffff">STORES</text>
+    <text x="594" y="560">record id -&gt; record:</text>
+    <text x="594" y="580">domain, selector, bh,</text>
+    <text x="594" y="600">valid, aligned,</text>
+    <text x="594" y="620">key_bits, signed_at,</text>
+    <text x="594" y="640">requester, fee_paid</text>
+    <text x="594" y="660">records_of(requester)</text>
+    <text x="594" y="680">last_refusal(requester)</text>
+  </g>
+
+  <!-- Extractor, patterns -->
+  <rect x="832" y="400" width="235" height="300" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <rect x="832" y="400" width="235" height="50" fill="#16528f" stroke="#ffffff" stroke-width="2"/>
+  <text x="844" y="424" fill="#ffffff" font-size="19" font-weight="bold">EXTRACTOR</text>
+  <text x="844" y="443" fill="#9cc9ff" font-size="14">v1, patterns lane</text>
+  <text x="844" y="478" fill="#ffffff" font-size="15">0x35bcC4867301c35A27BE</text>
+  <text x="844" y="498" fill="#ffffff" font-size="15">44Fb7d3C53862e8464E5</text>
+  <line x1="832" y1="515" x2="1067" y2="515" stroke="#9cc9ff" stroke-width="1"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="844" y="538" font-weight="bold" fill="#ffffff">STORES</text>
+    <text x="844" y="560">record id -&gt; extraction:</text>
+    <text x="844" y="580">verifier, record_id,</text>
+    <text x="844" y="600">match, shipped,</text>
+    <text x="844" y="620">eta_day, eta_date,</text>
+    <text x="844" y="640">order_id_found</text>
+    <text x="844" y="660">patterns per domain</text>
+    <text x="844" y="680">records_of, last_refusal</text>
+  </g>
+
+  <!-- Extractor, LLM -->
+  <rect x="1082" y="400" width="235" height="300" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <rect x="1082" y="400" width="235" height="50" fill="#16528f" stroke="#ffffff" stroke-width="2"/>
+  <text x="1094" y="424" fill="#ffffff" font-size="19" font-weight="bold">EXTRACTOR</text>
+  <text x="1094" y="443" fill="#9cc9ff" font-size="14">v1, LLM lane</text>
+  <text x="1094" y="478" fill="#ffffff" font-size="15">0xCC095f05Dbb55a339Fe1</text>
+  <text x="1094" y="498" fill="#ffffff" font-size="15">26F3AF879224487371d6</text>
+  <line x1="1082" y1="515" x2="1317" y2="515" stroke="#9cc9ff" stroke-width="1"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="1094" y="538" font-weight="bold" fill="#ffffff">STORES</text>
+    <text x="1094" y="560">record id -&gt; extraction:</text>
+    <text x="1094" y="580">verifier, record_id,</text>
+    <text x="1094" y="600">match, shipped,</text>
+    <text x="1094" y="620">eta_day, flagged,</text>
+    <text x="1094" y="640">prompt_sha256</text>
+    <text x="1094" y="660">no owner data</text>
+    <text x="1094" y="680">records_of, last_refusal</text>
+  </g>
+
+  <!-- reads between modules -->
+  <g stroke="#9cc9ff" stroke-width="1.5" fill="none">
+    <path d="M 640 700 V 740 H 449.5 V 702" marker-end="url(#head)"/>
+    <path d="M 949.5 700 V 775 H 770 V 702" marker-end="url(#head)"/>
+    <path d="M 1199.5 700 V 810 H 720 V 702" marker-end="url(#head)"/>
+  </g>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="462" y="733">key_status(d, s)</text>
+    <text x="786" y="768">get(record_id)</text>
+    <text x="1010" y="803">get(record_id)</text>
+  </g>
+
+  <!-- agent and gateway -->
+  <rect x="45" y="120" width="230" height="105" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <text x="58" y="146" fill="#ffffff" font-size="19" font-weight="bold">AGENT</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="58" y="172">holds the .eml</text>
+    <text x="58" y="192">and a wallet key,</text>
+    <text x="58" y="212">or gateway credits</text>
+  </g>
+
+  <path d="M 100 225 V 438" stroke="#ffffff" stroke-width="2.5" fill="none" marker-end="url(#headw)"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="112" y="310">headers blob,</text>
+    <text x="112" y="328">body to extract,</text>
+    <text x="112" y="346">paid in credits</text>
+  </g>
+
+  <rect x="45" y="440" width="230" height="150" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <text x="58" y="466" fill="#ffffff" font-size="19" font-weight="bold">GATEWAY</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="58" y="495">hosts blob and body</text>
+    <text x="58" y="515">at https until</text>
+    <text x="58" y="535">FINALIZED;</text>
+    <text x="58" y="555">its wallet pays</text>
+    <text x="58" y="575">GEN fee and gas</text>
+  </g>
+
+  <!-- entry path 1: wallet -->
+  <path d="M 275 160 H 560 V 345 H 640 V 398" stroke="#ffffff" stroke-width="2.5" fill="none" marker-end="url(#headw)"/>
+  <text x="325" y="186" fill="#ffffff" font-size="15" font-weight="bold">1  WALLET</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="325" y="205">attest_inline(blob,</text>
+    <text x="325" y="223">domain, selector)</text>
+    <text x="325" y="241">+ fee() in GEN</text>
+  </g>
+
+  <!-- entry path 2: gateway -->
+  <path d="M 275 470 H 318 V 370 H 610 V 398" stroke="#ffffff" stroke-width="2.5" fill="none" marker-end="url(#headw)"/>
+  <text x="34" y="622" fill="#ffffff" font-size="15" font-weight="bold">2  GATEWAY</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="34" y="642">attest(headers_url,</text>
+    <text x="34" y="660">domain, selector);</text>
+    <text x="34" y="678">requester: gateway</text>
+    <text x="34" y="722">then, either path:</text>
+    <text x="34" y="740">extract(record_id,</text>
+    <text x="34" y="758">body_url) on a lane</text>
+    <text x="34" y="800">the record is the</text>
+    <text x="34" y="818">proof, never the tx</text>
+  </g>
+
+  <!-- consumer -->
+  <rect x="1365" y="400" width="210" height="160" fill="#0f4585" stroke="#ffffff" stroke-width="2"/>
+  <text x="1377" y="425" fill="#ffffff" font-size="19" font-weight="bold">CONSUMER</text>
+  <text x="1377" y="446" fill="#ffffff" font-size="19" font-weight="bold">CONTRACT</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="1377" y="475">third party</text>
+    <text x="1377" y="495">keeps the Router</text>
+    <text x="1377" y="515">address only</text>
+    <text x="1377" y="543">consumer_example.py</text>
+  </g>
+  <path d="M 1470 400 V 180 H 1057" stroke="#9cc9ff" stroke-width="1.5" stroke-dasharray="7 5" fill="none" marker-end="url(#head)"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="1080" y="172">resolve(name)</text>
+    <text x="1080" y="200">at LATEST_FINAL</text>
+  </g>
+  <path d="M 1470 560 V 620 H 1319" stroke="#9cc9ff" stroke-width="1.5" fill="none" marker-end="url(#head)"/>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="1365" y="648">reads the Verifier</text>
+    <text x="1365" y="666">and both Extractors:</text>
+    <text x="1365" y="684">check_for, get,</text>
+    <text x="1365" y="702">records_of,</text>
+    <text x="1365" y="720">get_record</text>
+  </g>
+
+  <!-- module dimension -->
+  <g stroke="#9cc9ff" stroke-width="1" fill="none">
+    <line x1="332" y1="880" x2="1317" y2="880" marker-start="url(#tick)" marker-end="url(#tick)"/>
+    <line x1="332" y1="850" x2="332" y2="874" stroke-dasharray="2 3"/>
+    <line x1="1317" y1="850" x2="1317" y2="874" stroke-dasharray="2 3"/>
+  </g>
+  <text x="824" y="902" fill="#9cc9ff" font-size="15" text-anchor="middle">FOUR CONTRACTS, EACH RESOLVED BY NAME; NONE KEEPS ANOTHER'S ADDRESS</text>
+  <text x="824" y="930" fill="#ffffff" font-size="14" text-anchor="middle">A result exists only as a record read at LATEST_FINAL.</text>
+
+  <!-- legend -->
+  <text x="34" y="890" fill="#ffffff" font-size="15" font-weight="bold">LEGEND</text>
+  <path d="M 34 910 H 104" stroke="#9cc9ff" stroke-width="1.5" fill="none" marker-end="url(#head)"/>
+  <text x="118" y="915" fill="#9cc9ff" font-size="14">read at LATEST_FINAL</text>
+  <path d="M 34 935 H 104" stroke="#9cc9ff" stroke-width="1.5" stroke-dasharray="7 5" fill="none" marker-end="url(#head)"/>
+  <text x="118" y="940" fill="#9cc9ff" font-size="14">resolved by name through the Router</text>
+  <path d="M 34 960 H 104" stroke="#ffffff" stroke-width="2.5" fill="none" marker-end="url(#headw)"/>
+  <text x="118" y="965" fill="#9cc9ff" font-size="14">entry path: a paid write</text>
+
+  <!-- title block -->
+  <g stroke="#ffffff" stroke-width="1.5" fill="none">
+    <rect x="1330" y="855" width="250" height="123" fill="#0f4585"/>
+    <line x1="1330" y1="890" x2="1580" y2="890"/>
+    <line x1="1330" y1="912" x2="1580" y2="912"/>
+    <line x1="1330" y1="934" x2="1580" y2="934"/>
+    <line x1="1330" y1="956" x2="1580" y2="956"/>
+    <line x1="1415" y1="912" x2="1415" y2="978"/>
+  </g>
+  <text x="1342" y="880" fill="#ffffff" font-size="22" font-weight="bold">LACRE</text>
+  <text x="1568" y="880" fill="#9cc9ff" font-size="14" text-anchor="end">Insidr Labs</text>
+  <text x="1342" y="906" fill="#9cc9ff" font-size="14">architecture, primitives</text>
+  <g fill="#9cc9ff" font-size="14">
+    <text x="1342" y="928">NETWORK</text>
+    <text x="1427" y="928" fill="#ffffff">Bradbury</text>
+    <text x="1342" y="950">DATE</text>
+    <text x="1427" y="950" fill="#ffffff">2026-09-29</text>
+    <text x="1342" y="972">SHEET</text>
+    <text x="1427" y="972" fill="#ffffff">1 of 1</text>
+  </g>
+</svg>

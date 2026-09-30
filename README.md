@@ -1,5 +1,7 @@
 # Lacre
 
+Lacre: a signed-evidence primitive for GenLayer. By Insidr Labs, MIT license.
+
 Lacre is signed evidence for Intelligent Contracts on GenLayer. An email that
 a domain has DKIM-signed is already a statement that domain will stand behind:
 the signature covers the headers, the public key is published in DNS, and
@@ -17,6 +19,28 @@ headers while they are served. The Verifier checks the headers only; the
 Extractor checks a body against the `bh` of a Verifier record and reads a few
 fields out of it. See [docs/interfaces.md](docs/interfaces.md), sections 6
 and 10.
+
+## Primitives
+
+Five contracts on Testnet Bradbury, each usable on its own from a wallet or
+from another contract. The Router is the one address to remember; it
+resolves the other four by name. How to call them without the gateway is in
+[docs/direct-use.md](docs/direct-use.md).
+
+| contract | version | Bradbury address | purpose |
+|----------|---------|------------------|---------|
+| [Router](docs/router.md) | - | `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9` | resolves `verifier`, `keycache`, `extractor` and `extractor_llm`, with a 48 hour notice on any change |
+| [KeyCache](docs/keycache.md) | v1 | `0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251` | holds DKIM keys read from DNS by consensus, usable after a 24 hour quarantine |
+| [Verifier](docs/verifier.md) | v1.2 | `0x50fc4fD7183c9e0C8Bb2ABD21E55581cE16F59ed` | turns the DKIM signature of a set of headers into a public record |
+| [Extractor (patterns)](docs/extractor.md) | v1 | `0x35bcC4867301c35A27BE44Fb7d3C53862e8464E5` | checks a body against a Verifier record and reads it with the sender's patterns |
+| [Extractor (LLM)](docs/llmextractor.md) | v1 | `0xCC095f05Dbb55a339Fe126F3AF879224487371d6` | the same body check, read by each validator's model, for any sender |
+
+![Lacre architecture: the Router, the four contracts it resolves, and the two ways in](docs/architecture.svg)
+
+The Router in front of the four contracts it resolves, the two ways an agent
+attests, and a consumer contract reading through the Router.
+
+## What is here
 
 The repository holds three things. The DKIM probes are the evidence that the
 check itself works. `experiments/dkim-probe/` is the off-chain verifier: pure
@@ -96,6 +120,13 @@ to `--attempts`; anything it cannot judge, such as an appeal in progress or
 a failed read, stops it with the consensus tx id and nothing more is sent.
 Each outcome has its own exit code, listed in the script. The rules it
 follows are in [docs/interfaces.md](docs/interfaces.md), section 5.
+
+`tools/headers_blob.py` cuts the headers blob `attest_inline` takes from an
+.eml kept in a gitignored directory, and prints it, or with `--digest` only
+its length and SHA-256. `integrations/consumer_example.py` is a minimal
+contract that reads the Verifier and the Extractors through the Router, for
+a third party to copy; it is not deployed. Both are described in
+[docs/direct-use.md](docs/direct-use.md).
 
 Status: research probes plus the Router, the KeyCache, the Verifier and
 both extraction lanes, the pattern Extractor and the LLM Extractor, on a

@@ -1,3 +1,6 @@
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+
 # The model-reading lane over a body that already matched its DKIM bh=: the
 # hardened prompt of probe D2 (experiments/llm-probe-2/llm/prompt.py), its
 # deterministic prefilter, and the folding of one model answer. Pure stdlib

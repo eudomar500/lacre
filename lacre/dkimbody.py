@@ -1,3 +1,6 @@
+# Lacre: a signed-evidence primitive for GenLayer.
+# By Insidr Labs, MIT license.
+
 # Body canonicalization and the body hash, RFC 6376 sections 3.4.3 and 3.4.4,
 # with the field extraction the body probe measured on Bradbury. Pure stdlib
 # and no file or network access, so this can be spliced into a contract the way
