@@ -34,6 +34,7 @@ def as_address(value):
         raise gl.vm.UserError("[EXPECTED] not a 20 byte hex address")
 
 
+# integrate:begin
 def final(address):
     # A record read before FINALIZED can still be appealed away (rule 1), so
     # nothing here reads any other state.
@@ -69,6 +70,7 @@ def attested(router, record_id, domain, min_key_bits):
         return (verifier, record) if ok is True else (None, {})
     except Exception:
         return None, {}
+# integrate:end
 
 
 def shipped(router, record_id, lane):
