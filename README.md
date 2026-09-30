@@ -139,12 +139,12 @@ Status: research probes plus the Router, the KeyCache, the Verifier and
 both extraction lanes, the pattern Extractor and the LLM Extractor, on a
 testnet, with the previous Registry and Verifier still live beside them.
 The amazon.com key and the gmail.com key (selector 20251104) are active on
-the KeyCache. Verifier v1.2 holds four records, the first written on
+the KeyCache. Verifier v1.2 holds five records, the first written on
 2026-09-27 and finalized. Record 3 was written on 2026-09-30 by
 `attest_inline` sent straight from a wallet, with the wallet as requester,
 fee 0 and about 0.0009 GEN of gas, and finalized; record 4 was written the
 same day through the hosted gateway, for a gmail.com message received in a
-mailbox. The Extractor is
+mailbox; record 5, on the same day, was the sample the page offers, attested from a wallet. The Extractor is
 deployed with the amazon.com patterns set, and holds its first record that
 matched a signed body, record 2, written against that Verifier record on
 2026-09-28 and finalized; records 0 and 1 before it are charged records of a
