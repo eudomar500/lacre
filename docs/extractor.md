@@ -433,7 +433,7 @@ digest `tools/extract_check.py` prints for `lacre/extractors/amazon.json`.
 once, without the 48 hour delay ([docs/router.md](router.md#the-delay)). The
 fee is 0.
 
-**Records.** All three were written by
+**Records.** The first three were written by
 `0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53` against record 0 of Verifier
 v1.2, with a fee of 0, and `records_of` for that requester returns
 `[0, 1, 2]`.
@@ -443,6 +443,13 @@ v1.2, with a fee of 0, and `records_of` for that requester returns
 | 0 | `0xfe3dc83acb76aa7c069c850b945480f5e7948c156ccfd7dc0a14a2ac9e1fe6c1` | false | `body HTTP 404` | all empty |
 | 1 | `0x95543b08ac125619359b152a2fec4030e6316b68c36b2b009cd33d482d266ce9` | false | `body HTTP 404` | all empty |
 | 2 | `0x69d689f9f05a48e3ae1c6fd817b3de9f6c5d67b740dc173585caa368c0365f28` | true | `extracted` | as below |
+
+Records 3 and 4 were written by the gateway wallet
+`0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561` against Verifier v1.2 records
+1 and 2, both `match` true with `reason` `extracted` (consensus txs
+`0xc023d8b910f14592f13642f3f745cccc89710bc33e0603b17c6a27af3b69bffc` and
+`0x90818f13ff9615fb0e2f389a32106be8cdba10c1eb2c3adbba2036469d523386`);
+`count()` is 5.
 
 Records 0 and 1 are the fetch error path, measured on chain, and behave as
 documented in [extract](#extract): the body URL answered 404 to every

@@ -22,6 +22,14 @@ UTC, and `confirm_key` activated it, consensus tx
 ACCEPTED with AGREE, L2 gas used 843 297. The key is `active`, with
 `activated_at` `2026-09-27T21:40:17Z`.
 
+The second, gmail.com under `20251104` (2048 bits), was registered on
+2026-09-28 (`first_seen` `2026-09-28T23:11:37Z`), consensus tx
+`0x6707af26f3a03071b2347bc9acfef80041e9db7f9446f62a97613a6220b13a72`, and
+activated by `confirm_key`, consensus tx
+`0x3b0283dd64f1317fbaf7ae3a4b328f8660f9f5263a4f3659a3ecfb2312d4de9e`,
+`activated_at` `2026-09-29T23:22:05Z`; both were sent by the gateway wallet
+`0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561`.
+
 ## Why the quarantine
 
 On Registry v1 whoever calls `register_key` first stores whatever both

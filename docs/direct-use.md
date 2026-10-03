@@ -90,11 +90,11 @@ What the caller has to know:
   selector in state `active` (`key_status(domain, selector)`); a new key is
   registered with `register_key` and becomes usable through `confirm_key`
   24 hours later. See [keycache.md](keycache.md).
-- **About 35 minutes to FINALIZED.** Acceptance takes about a minute on a
-  healthy network; finalization follows the appeal window. The first record
-  on v1.2 was submitted at 23:12:18 and FINALIZED at 23:45:01. Nothing is
-  final before that, and a front end that shows a result earlier shows it as
-  provisional.
+- **About 30 to 35 minutes to FINALIZED.** Acceptance takes about a minute
+  on a healthy network; finalization follows the appeal window. The first
+  record on v1.2 was submitted at 23:12:26 and FINALIZED at 23:44:40.
+  Nothing is final before that, and a front end that shows a result
+  earlier shows it as provisional.
 - **One call at a time per contract.** A second transaction to the same
   contract is queued until the first is decided, and the queue holds 20.
   Send the next call after the previous one is decided (rule 13).
@@ -166,7 +166,8 @@ resolves the Verifier and the Extractors on every use, and reads them at
   `llm`) holds an extraction of that record, against the current Verifier,
   with `match` true, `reason` `extracted` and `shipped` true. The Extractors
   index records by requester, so it looks among the newest 32 extractions of
-  the wallet that made the attestation.
+  the wallet that made the attestation. An extraction made by a different
+  wallet than the attestation's requester is not found.
 - `mark_delivered(record_id, lane)` stores the Verifier and record id once
   both pass, and refuses a second record of the same signed message.
 

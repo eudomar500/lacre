@@ -491,5 +491,6 @@ run of the prompt without the injection question, and it is one call on one
 ordinary body: it shows that the prompt as deployed reads that body and that
 the validators agreed on it in the first round, with no leader rotation. It says nothing about attacks. The
 basis for the attack cases is still probe D2, 40 of 40 correct readings
-over ten synthetic bodies, 32 of them attacks, with the injection question
+over ten synthetic bodies, eight of them attacks (32 of the 40 readings),
+with the injection question
 in the prompt ([The prompt](#the-prompt)).

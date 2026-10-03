@@ -22,7 +22,7 @@ consumer to talk to another one.
 
 | layer | status | what it answers |
 |-------|--------|-----------------|
-| Router | deployed, current, the public address | Which contract currently holds a name (`verifier`, `keycache`), which contracts have held it, and which one a pinned version label names. |
+| Router | deployed, current, the public address | Which contract currently holds a name (`verifier`, `keycache`, `extractor`, `extractor_llm`), which contracts have held it, and which one a pinned version label names. |
 | KeyCache | deployed, current | What RSA key a domain published under a selector, and whether it is `pending`, `active`, `rotated` or `retired`. |
 | Verifier | deployed, v1.2 current | Whether a set of email headers carries a valid DKIM signature from a given domain, and whether the From domain aligns with the signer. It answers "who sent this". |
 | Registry | deployed, v1, previous version, still live | The key cache and version router that the Router and the KeyCache replace. Verifier v1.1 still reads its keys from it. |
@@ -172,9 +172,8 @@ written through the gateway:
 | field | value |
 |-------|-------|
 | consensus tx | `0x0847c13447bb807fe9d0dd942bf6730b9a6fb09f42095a9abd2d4b0d56fda311` |
-| submitted | 2026-09-27 23:12:18 UTC |
-| ACCEPTED | 2026-09-27 23:12:57 UTC |
-| FINALIZED | 2026-09-27 23:45:01 UTC |
+| submitted | 2026-09-27 23:12:26 UTC |
+| FINALIZED | 2026-09-27 23:44:40 UTC |
 | attempts | 1 |
 | `valid` | true |
 | `aligned` | true |
@@ -185,7 +184,8 @@ written through the gateway:
 | `fee_paid` | 0 |
 | `requester` | `0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561` |
 
-`records_of("0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561")` returns `[0]`.
+`records_of("0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561")` returned `[0]`
+after that call; read on 2026-10-03 it returns `["0", "1", "2", "4"]`.
 
 **Extractor v1.** Deployed on 2026-09-28 by `tools/deploy.py` from a clean
 tree, with the Router as its constructor argument, and recorded at deploy
@@ -540,17 +540,17 @@ records were written. They are local to one Verifier contract.
 | `bh` | str | the selected signature's `bh=` tag with whitespace removed, as the signer claimed it. Not recomputed. Empty when no signature was selected |
 | `body_canon` | str | the body half of the selected signature's `c=` tag, lowercased, `simple` when absent. Taken from the signed tag and not checked to be `simple` or `relaxed`. Empty when no signature was selected |
 | `message_id_sha256` | str | SHA-256, hex, of the first Message-ID field in the blob, unfolded and trimmed. Empty if there is none. The Message-ID is not required to be in `h=`, so it may be unsigned |
-| `key_bits` | u256 | `key_bits` of the Registry record at attestation time |
+| `key_bits` | str (u256 in storage) | `key_bits` of the Registry record at attestation time |
 | `key_sha256` | str | `key_sha256` of the Registry record at attestation time |
 | `valid` | bool | see 4.2 |
 | `reason` | str | see 4.2, at most 96 characters |
 | `from_domain` | str | domain part of the From address, lowercased, trailing dot removed. Empty unless the blob has exactly one From field and the address is unambiguous (quoted display names removed, at most one `@` and one `<`) |
 | `aligned` | bool | `from_domain` is non-empty and equals the signing domain, or one ends with `.` followed by the other. No public suffix list is applied |
-| `signed_at` | u256 | the signature's `t=` tag. 0 when absent, not ASCII digits, or 20 or more characters |
+| `signed_at` | str (u256 in storage) | the signature's `t=` tag. 0 when absent, not ASCII digits, or 20 or more characters |
 | `source` | str | `url` or `inline` |
 | `requester` | Address | `gl.message.sender_address` of the attesting transaction |
 | `attested_at` | str | `gl.message_raw["datetime"]` of the attesting transaction, unmodified, for example `2026-09-23T14:48:13Z` |
-| `fee_paid` | u256 | the whole `gl.message.value` of the attesting transaction, in wei |
+| `fee_paid` | str (u256 in storage) | the whole `gl.message.value` of the attesting transaction, in wei |
 
 Every string field taken from the blob has `|`, CR and LF replaced by a
 space and is truncated (255 characters for `bh`, 63 for `body_canon`, 253

@@ -5,8 +5,9 @@ name to the address of the contract that currently answers to it, and does
 nothing else. It was deployed on Bradbury on 2026-09-26 at
 `0xEf37cb72C3A9dD6bCE2f3575B75c94C555F9c8d9`, deploy consensus tx
 `0x86ae441073d12b9fe8f2d87ed7a78a8e8967b2640acd09607df72722925793b7`, from
-commit `93d3592`, and resolves `keycache` (label `v1`) and `verifier`
-(label `v1.2`); [docs/interfaces.md](interfaces.md), section 2, has the
+commit `93d3592`, and resolves `keycache` (label `v1`), `verifier`
+(label `v1.2`), `extractor` (label `v1`) and `extractor_llm` (label
+`v1`); [docs/interfaces.md](interfaces.md), section 2, has the
 wiring. Registry v1 in [docs/registry.md](registry.md) is the previous
 version and stays live.
 
@@ -31,11 +32,11 @@ kept this small: nothing about keys, DNS, fees or attestations is in it.
 ## What it stores
 
 One entry per name. The names in use are `keycache`, `verifier` and, since
-2026-09-28, `extractor`; any other name a later contract needs is accepted.
-Names and version labels are normalized the way the Registry normalizes
-names: trimmed, lowercased, leading and trailing dots removed, at most 63
-characters of `a-z`, `0-9`, `-`, `.` and `_`. Anything else normalizes to the
-empty string.
+2026-09-28, `extractor` and `extractor_llm`; any other name a later
+contract needs is accepted. Names and version labels are normalized the
+way the Registry normalizes names: trimmed, lowercased, leading and
+trailing dots removed, at most 63 characters of `a-z`, `0-9`, `-`, `.`
+and `_`. Anything else normalizes to the empty string.
 
 | storage | what it holds |
 |---------|---------------|
@@ -182,7 +183,7 @@ From another contract:
 ```python
 router = gl.get_contract_at(Address(ROUTER)).view(state=StorageType.LATEST_FINAL)
 verifier = router.resolve("verifier")                # follows every change
-audited = router.resolve_pinned("verifier", "1.2")   # never moves
+audited = router.resolve_pinned("verifier", "v1.2")  # never moves
 coming = router.pending("verifier")                  # {} or the change and when
 ```
 

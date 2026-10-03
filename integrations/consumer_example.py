@@ -78,8 +78,12 @@ def shipped(router, record_id, lane):
 
     Never raises. The Extractors index their records by requester, not by
     Verifier record, so the extraction is looked for among those of the
-    requester who attested it, which is how tools/attest.py and
-    tools/extract.py, run from one wallet, and the gateway both leave them.
+    requester who attested it, which is how the gateway leaves them, and
+    how tools/attest.py and tools/extract.py leave them when one wallet
+    runs both. An extraction sent by another wallet is not found: on
+    Bradbury, Verifier record 0 was attested by the gateway and extracted
+    by the owner wallet, so require_shipped("0", ...) is false on both
+    lanes.
     """
     name = LANES.get(str(lane).strip().lower())
     if name is None:

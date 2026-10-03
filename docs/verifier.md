@@ -45,7 +45,7 @@ unchanged.
 | `reason` | why, in a fixed phrase; see the list below |
 | `from_domain` | the domain part of the signed From address, lowercased; empty if it could not be read unambiguously |
 | `aligned` | true when `d=` and `from_domain` are equal or one is a subdomain of the other; see [Alignment](#alignment) |
-| `signed_at` | the signature's `t=` tag as an integer, 0 when absent or malformed |
+| `signed_at` | the signature's `t=` tag, stored as an integer and returned by `get` as a decimal string, "0" when absent or malformed |
 | `source` | `url` or `inline`, the method that wrote the record |
 | `requester` | the address that sent the attestation transaction; it paid `fee_paid`, which is 0 while the fee is 0 |
 | `attested_at` | the runner's transaction datetime, stored unmodified |
@@ -675,17 +675,19 @@ The Router pointed `verifier` at it with label `v1.2` on 2026-09-26
 (`set_at` `2026-09-26T20:58:43Z` in `history("verifier")`), consensus tx
 `0x4be42c8850f1629086bc0ced194f2524b390e126e60a56b539a07071124c1acb`, and
 resolves `keycache` to the KeyCache
-`0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`. The one key registered there,
-amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, was activated by
-`confirm_key` with `activated_at` `2026-09-27T21:40:17Z`. The v1.2 fee is 0.
+`0x2b2e13E4aFAAD1AFE1247085D01c56Aeb425e251`. Two keys are active there:
+amazon.com under `yg4mwqurec7fkhzutopddd3ytuaqrvuz`, `activated_at`
+`2026-09-27T21:40:17Z`, and gmail.com under `20251104`, `activated_at`
+`2026-09-29T23:22:05Z`. The v1.2 fee is 0.
 
 Record `0`, the first on v1.2, was written through the gateway, consensus tx
 `0x0847c13447bb807fe9d0dd942bf6730b9a6fb09f42095a9abd2d4b0d56fda311`,
-submitted 2026-09-27 23:12:18 UTC, ACCEPTED 23:12:57 and FINALIZED 23:45:01
-on the first attempt. It is `valid` and `aligned`, `schema_version` 2,
+submitted 2026-09-27 23:12:26 UTC and FINALIZED 23:44:40 on the first
+attempt. It is `valid` and `aligned`, `schema_version` 2,
 `source` `url`, `body_canon` `simple`, a 1024 bit key, `fee_paid` 0, with
 `requester` `0xF36814b4F7b6eF3CfBa574837eFa9C7f00928561`, whose
-`records_of` returns `[0]`. The full record is in
+`records_of` returned `[0]` after that call; read on 2026-10-03 it returns
+`["0", "1", "2", "4"]`. The full record is in
 [docs/interfaces.md](interfaces.md), section 2.
 
 ### v1.1
