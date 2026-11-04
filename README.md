@@ -37,6 +37,21 @@ Amazon sample's content fail the same way in both.
 The 7 failures in `test_deploy_provenance` are there before the migration, on a clean checkout of
 d2cb1fc.
 
+Deployed on Bradbury Phase 2 on 2026-11-04 from the `_p2` files of this commit (the sha256 of the code
+read back from the chain matches each file):
+
+| Contract | Address | Router name |
+|---|---|---|
+| Router | `0xE7916BaFe7Aa624347Bf19e58AF0623F5182d74C` | |
+| KeyCache | `0xa58157280b9D2220d99AB77EeB492Cc22B45CAAb` | `keycache`, v1 |
+| Verifier | `0x0aA9807Db3055A32392A005D5724845CD676E43D` | `verifier`, v1.2 |
+| Extractor | `0x4938a36677a53d67cd06472a00ba36767797CbD7` | `extractor`, v1 |
+| LLM Extractor | `0xEAE915fD47545851208cb040FBE3C3d36aB34f56` | `llmextractor`, v1 |
+
+Each deploy was sent with a gas limit of 1.2 times the node's estimate. Phase 2 accepts a deploy
+estimated at about 32.2 million gas (about 39,000 bytes of code), so the 2^24 cap measured on the
+earlier Bradbury does not apply there.
+
 Lacre is signed evidence for Intelligent Contracts on GenLayer. An email that
 a domain has DKIM-signed is already a statement that domain will stand behind:
 the signature covers the headers, the public key is published in DNS, and
