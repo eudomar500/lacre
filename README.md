@@ -52,6 +52,12 @@ Each deploy was sent with a gas limit of 1.2 times the node's estimate. Phase 2 
 estimated at about 32.2 million gas (about 39,000 bytes of code), so the 2^24 cap measured on the
 earlier Bradbury does not apply there.
 
+Three DKIM keys were registered on 2026-11-04 and confirmed after the 24 hour quarantine on
+2026-11-05: `shop1` for shop.rpmdev.app (2048 bits), `demo1` for demo.rpmdev.app (2048 bits) and
+`resend` for techshopping.site (1024 bits). Records 0 and 1, the first on Phase 2, were attested on
+2026-11-05: two techshopping.site order emails sent through Tenet Pay's gateway, which resolves the
+Verifier by its Router name.
+
 Lacre is signed evidence for Intelligent Contracts on GenLayer. An email that
 a domain has DKIM-signed is already a statement that domain will stand behind:
 the signature covers the headers, the public key is published in DNS, and
