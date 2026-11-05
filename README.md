@@ -2,6 +2,62 @@
 
 Lacre: a signed-evidence primitive for GenLayer. By Insidr Labs, MIT license.
 
+## This fork: Bradbury Phase 2
+
+This fork builds Lacre for GenLayer Bradbury Phase 2 (Consensus v0.6, GenVM v0.3.0), starting from
+upstream commit d2cb1fc. The logic is unchanged. `tools/build_p2.py` writes
+`contracts/<name>/<name>_p2.py` for the Router, KeyCache, Verifier, Extractor and LLM Extractor from
+each built contract, and changes only the runner header and the standard library names that moved:
+
+| v0.2 | Phase 2 |
+|---|---|
+| `from genlayer import *` | `import genlayer as gl`, with the storage and type names from `genlayer.storage` and `genlayer.types` |
+| `from genlayer.py.public_abi import StorageType` | `from genlayer.contract import StorageView` |
+| `StorageType.LATEST_FINAL` | `StorageView.LATEST_FINALIZED` (the same value, 1) |
+| `gl.Contract` | `gl.contract.Contract` |
+| `gl.get_contract_at(` | `gl.contract.get_at(` |
+| `gl.message_raw` | `gl.message.raw` |
+
+`StorageView` was read from the Phase 2 runner itself (py-genlayer `babwp9...`, which no published
+GenVM release contains yet): `StorageType` is gone there. The Registry is not built, since nothing
+here or downstream calls it.
+
+`tests/p2_stub_run.py` runs each stub harness on the Phase 2 build, with the same checks;
+`--compare` runs it on both builds and compares the output. Two checks of the built file are read
+with the Phase 2 layout in that run only: the comments are the two header lines, and the size limit
+is 150 bytes higher.
+
+The Verifier and Extractor harnesses read a sample email that is not public
+(`experiments/dkim-probe/samples/amazon-shipped.eml`). For this fork they were run with our own
+DKIM-signed email from a test store (signed by Resend for `techshopping.site`), changing only the
+message and its data: domain, selector, body hash and signing time. That email is not in this
+repository. The output of the original and Phase 2 builds is identical; the checks that look for the
+Amazon sample's content fail the same way in both.
+
+The 7 failures in `test_deploy_provenance` are there before the migration, on a clean checkout of
+d2cb1fc.
+
+Deployed on Bradbury Phase 2 on 2026-11-04 from the `_p2` files of this commit (the sha256 of the code
+read back from the chain matches each file):
+
+| Contract | Address | Router name |
+|---|---|---|
+| Router | `0xE7916BaFe7Aa624347Bf19e58AF0623F5182d74C` | |
+| KeyCache | `0xa58157280b9D2220d99AB77EeB492Cc22B45CAAb` | `keycache`, v1 |
+| Verifier | `0x0aA9807Db3055A32392A005D5724845CD676E43D` | `verifier`, v1.2 |
+| Extractor | `0x4938a36677a53d67cd06472a00ba36767797CbD7` | `extractor`, v1 |
+| LLM Extractor | `0xEAE915fD47545851208cb040FBE3C3d36aB34f56` | `llmextractor`, v1 |
+
+Each deploy was sent with a gas limit of 1.2 times the node's estimate. Phase 2 accepts a deploy
+estimated at about 32.2 million gas (about 39,000 bytes of code), so the 2^24 cap measured on the
+earlier Bradbury does not apply there.
+
+Three DKIM keys were registered on 2026-11-04 and confirmed after the 24 hour quarantine on
+2026-11-05: `shop1` for shop.rpmdev.app (2048 bits), `demo1` for demo.rpmdev.app (2048 bits) and
+`resend` for techshopping.site (1024 bits). Records 0 and 1, the first on Phase 2, were attested on
+2026-11-05: two techshopping.site order emails sent through Tenet Pay's gateway, which resolves the
+Verifier by its Router name.
+
 Lacre is signed evidence for Intelligent Contracts on GenLayer. An email that
 a domain has DKIM-signed is already a statement that domain will stand behind:
 the signature covers the headers, the public key is published in DNS, and
